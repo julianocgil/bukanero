@@ -20,7 +20,7 @@ http://srv/live/1.ts
   test('vírgula no nome do canal', () async {
     const String text = '#EXTINF:-1 group-title="A",Canal, HD\nhttp://s/2\n';
     final list = await parseM3uText(text).toList();
-    expect(list.first.name, 'HD');
+    expect(list.first.name, 'Canal, HD');
   });
 
   test('ignora diretivas desconhecidas e linhas em branco', () async {
@@ -49,5 +49,13 @@ http://s/2
     final list = await parseM3uText(text).toList();
     expect(list, hasLength(1));
     expect(list.first.name, 'Ok');
+  });
+
+  test('vírgula dentro das aspas do group-title', () async {
+    const String text =
+        '#EXTINF:-1 group-title="Filmes, Series",Canal X\nhttp://s/3\n';
+    final list = await parseM3uText(text).toList();
+    expect(list.first.group, 'Filmes, Series');
+    expect(list.first.name, 'Canal X');
   });
 }
