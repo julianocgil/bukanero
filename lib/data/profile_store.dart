@@ -64,3 +64,29 @@ String? loadLastProfileId() {
 void saveLastProfileId(String id) {
   File('${dataDir().path}/last_profile').writeAsStringSync(id);
 }
+
+String catalogDbPath(Profile p) => '${dataDir().path}/catalog_${p.id}.db';
+
+void deleteCatalog(Profile p) {
+  final File f = File(catalogDbPath(p));
+  if (f.existsSync()) f.deleteSync();
+}
+
+String userDataPath(Profile p) => '${dataDir().path}/userdata_${p.id}.db';
+
+String epgDbPath(Profile p) => '${dataDir().path}/epg_${p.id}.db';
+
+Directory? _imgDir;
+
+Directory imageCacheDir() =>
+    _imgDir ??= Directory('${dataDir().path}/img')..createSync(recursive: true);
+
+void deleteEpg(Profile p) {
+  final File f = File(epgDbPath(p));
+  if (f.existsSync()) f.deleteSync();
+}
+
+void deleteUserData(Profile p) {
+  final File f = File(userDataPath(p));
+  if (f.existsSync()) f.deleteSync();
+}

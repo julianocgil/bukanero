@@ -28,27 +28,38 @@ class _ProfileDialogState extends State<_ProfileDialog> {
   late final TextEditingController _url = TextEditingController(
     text: widget.initial?.url ?? '',
   );
+  late final TextEditingController _epg = TextEditingController(
+    text: widget.initial?.epgUrl ?? '',
+  );
   String? _error;
 
   @override
   void dispose() {
     _name.dispose();
     _url.dispose();
+    _epg.dispose();
     super.dispose();
   }
+
+  bool _isRemote(String s) =>
+      s.startsWith('http://') || s.startsWith('https://');
 
   void _save() {
     final String name = _name.text.trim();
     final String url = _url.text.trim();
+    final String epg = _epg.text.trim();
     if (name.isEmpty || url.isEmpty) {
       setState(() => _error = 'Preencha o nome e a playlist.');
       return;
     }
-    final bool remote = url.startsWith('http://') || url.startsWith('https://');
-    if (!remote && !File(url).existsSync()) {
+    if (!_isRemote(url) && !File(url).existsSync()) {
       setState(
         () => _error = 'Use uma URL http(s) ou o caminho de um arquivo.',
       );
+      return;
+    }
+    if (epg.isNotEmpty && !_isRemote(epg) && !File(epg).existsSync()) {
+      setState(() => _error = 'Guia: use uma URL http(s) ou um arquivo XMLTV.');
       return;
     }
     Navigator.pop(
@@ -59,6 +70,7 @@ class _ProfileDialogState extends State<_ProfileDialog> {
             DateTime.now().microsecondsSinceEpoch.toString(),
         name: name,
         url: url,
+        epgUrl: epg.isEmpty ? null : epg,
       ),
     );
   }
@@ -81,6 +93,13 @@ class _ProfileDialogState extends State<_ProfileDialog> {
               controller: _url,
               decoration: const InputDecoration(
                 labelText: 'Playlist M3U (URL ou caminho do arquivo)',
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _epg,
+              decoration: const InputDecoration(
+                labelText: 'Guia XMLTV (opcional; vazio = detectar sozinho)',
               ),
             ),
             if (_error != null)

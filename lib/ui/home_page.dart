@@ -1,15 +1,19 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
 
-import '../data/m3u/m3u_downloader.dart';
-import '../data/m3u/m3u_loader.dart';
+import '../data/catalog_db.dart';
+import '../data/download.dart';
+import '../data/epg.dart';
 import '../data/profile_store.dart';
+import '../data/user_data.dart';
 import '../domain/channel.dart';
 import '../domain/profile.dart';
 import '../domain/section.dart';
+import 'item_views.dart';
 import 'player_bar.dart';
 import 'profile_dialog.dart';
 
@@ -26,12 +30,19 @@ class _HomePageState extends State<HomePage> {
 
   List<Profile> _profiles = <Profile>[];
   Profile? _profile;
-  Future<Catalog>? _future;
+  Future<CatalogDb>? _future;
+  CatalogDb? _db;
+  UserData? _user;
+  EpgDb? _epg;
+  bool _epgBusy = false;
+  String? _epgStatus;
+  final Map<Section, Map<String, int>> _counts = <Section, Map<String, int>>{};
   Section _section = Section.live;
   String? _group;
   String _query = '';
   String? _playing;
-  bool _hideAdult = true;
+  String? _playingUrl;
+  bool _showHidden = false;
 
   @override
   void initState() {
@@ -53,19 +64,34 @@ class _HomePageState extends State<HomePage> {
 
   @override
   void dispose() {
+    _closeData();
     _player.dispose();
     super.dispose();
   }
 
-  // ---- perfis -------------------------------------------------------------
+  void _closeData() {
+    _db?.close();
+    _db = null;
+    _user?.close();
+    _user = null;
+    _epg?.close();
+    _epg = null;
+  }
+
+  // ---- perfis e dados -----------------------------------------------------
 
   void _apply(Profile p, {required bool refresh}) {
     saveLastProfileId(p.id);
     _player.stop();
+    _closeData();
+    _counts.clear();
     _profile = p;
     _group = null;
     _query = '';
     _playing = null;
+    _playingUrl = null;
+    _epgStatus = null;
+    _epgBusy = false;
     _future = _prepare(p, refresh: refresh);
   }
 
@@ -73,16 +99,81 @@ class _HomePageState extends State<HomePage> {
     setState(() => _apply(p, refresh: refresh));
   }
 
-  Future<Catalog> _prepare(Profile p, {required bool refresh}) async {
+  Future<CatalogDb> _prepare(Profile p, {required bool refresh}) async {
     final String src = p.url.trim();
     final bool remote = src.startsWith('http://') || src.startsWith('https://');
-    String path = src;
+    String m3u = src;
     if (remote) {
       final File cache = playlistCacheFile(p);
-      if (refresh || !cache.existsSync()) await downloadPlaylist(src, cache);
-      path = cache.path;
+      if (refresh || !cache.existsSync()) await downloadFile(src, cache);
+      m3u = cache.path;
     }
-    return loadM3u(path);
+    final String dbPath = catalogDbPath(p);
+    if (!catalogIsFresh(dbPath, m3u)) await importCatalog(m3u, dbPath);
+    final CatalogDb db = CatalogDb.open(dbPath);
+    _closeData();
+    _db = db;
+    _user = UserData.open(userDataPath(p));
+    _epg = EpgDb.tryOpen(epgDbPath(p));
+    unawaited(Future<void>.microtask(() => _refreshEpg()));
+    return db;
+  }
+
+  Future<void> _refreshEpg({bool force = false}) async {
+    final Profile? p = _profile;
+    final CatalogDb? db = _db;
+    if (!mounted || p == null || db == null || _epgBusy) return;
+    final String path = epgDbPath(p);
+    if (!force && epgIsFresh(path)) return;
+
+    List<String> urls;
+    final String? manual = p.epgUrl;
+    if (manual != null && manual.isNotEmpty) {
+      urls = <String>[manual];
+    } else {
+      urls = db.epgUrls();
+      if (urls.isEmpty) {
+        final String? derived = deriveXtreamEpgUrl(p.url);
+        urls = derived == null ? <String>[] : <String>[derived];
+      }
+    }
+    if (urls.isEmpty) {
+      setState(
+        () => _epgStatus =
+            'Esta lista não informa o guia (EPG). '
+            'Informe a URL XMLTV em Editar perfil.',
+      );
+      return;
+    }
+
+    setState(() {
+      _epgBusy = true;
+      _epgStatus = 'Baixando o guia de programação...';
+    });
+    try {
+      final int n = await importEpg(urls, path);
+      final CatalogDb? cur = _db;
+      if (!mounted || cur == null || _profile?.id != p.id) {
+        _epgBusy = false;
+        return;
+      }
+      _epg?.close();
+      final EpgDb? e = EpgDb.tryOpen(path);
+      final int matched = e == null
+          ? 0
+          : e.channelIds().intersection(cur.liveTvgIds()).length;
+      setState(() {
+        _epg = e;
+        _epgBusy = false;
+        _epgStatus = 'Guia: $n programas, $matched canais com programação';
+      });
+    } on Object catch (err) {
+      if (!mounted) return;
+      setState(() {
+        _epgBusy = false;
+        _epgStatus = 'Guia: $err';
+      });
+    }
   }
 
   Future<void> _addProfile() async {
@@ -104,6 +195,7 @@ class _HomePageState extends State<HomePage> {
       ];
     });
     saveProfiles(_profiles);
+    if (p.epgUrl != cur.epgUrl || p.url != cur.url) deleteEpg(cur);
     _select(p, refresh: p.url != cur.url);
   }
 
@@ -115,7 +207,8 @@ class _HomePageState extends State<HomePage> {
       builder: (BuildContext ctx) => AlertDialog(
         title: Text('Excluir "${cur.name}"?'),
         content: const Text(
-          'A lista baixada deste perfil também será apagada.',
+          'A lista baixada, o guia e os itens ocultos deste perfil '
+          'também serão apagados.',
         ),
         actions: <Widget>[
           TextButton(
@@ -130,19 +223,26 @@ class _HomePageState extends State<HomePage> {
       ),
     );
     if (ok != true || !mounted) return;
+    await _player.stop();
+    _closeData();
     deleteProfileData(cur);
+    deleteCatalog(cur);
+    deleteEpg(cur);
+    deleteUserData(cur);
     final List<Profile> rest = _profiles
         .where((Profile p) => p.id != cur.id)
         .toList();
     saveProfiles(rest);
-    await _player.stop();
     if (!mounted) return;
     setState(() {
       _profiles = rest;
       _profile = null;
       _future = null;
       _playing = null;
+      _playingUrl = null;
       _group = null;
+      _epgStatus = null;
+      _counts.clear();
     });
     if (rest.isNotEmpty) {
       _select(rest.first);
@@ -163,9 +263,28 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
+  // ---- ações --------------------------------------------------------------
+
   void _play(Channel c) {
-    setState(() => _playing = c.name);
+    setState(() {
+      _playing = c.name;
+      _playingUrl = c.url;
+    });
     _player.open(Media(c.url));
+  }
+
+  void _toggleGroup(String g, bool hidden) {
+    _user?.setGroupHidden(_section, g, hidden: !hidden);
+    setState(() {
+      if (_group == g && !hidden && !_showHidden) _group = null;
+    });
+  }
+
+  void _toggleItem(Channel c, bool hidden) {
+    final String? g = _group;
+    if (g == null) return;
+    _user?.setItemHidden(_section, g, c.name, hidden: !hidden);
+    setState(() {});
   }
 
   // ---- interface ----------------------------------------------------------
@@ -180,14 +299,21 @@ class _HomePageState extends State<HomePage> {
         ),
         actions: <Widget>[
           IconButton(
-            tooltip: _hideAdult
-                ? 'Mostrar categorias adultas'
-                : 'Ocultar categorias adultas',
-            icon: Icon(_hideAdult ? Icons.visibility_off : Icons.visibility),
+            tooltip: _showHidden
+                ? 'Esconder os itens ocultos'
+                : 'Mostrar os itens ocultos',
+            icon: Icon(_showHidden ? Icons.visibility : Icons.visibility_off),
             onPressed: () => setState(() {
-              _hideAdult = !_hideAdult;
+              _showHidden = !_showHidden;
               _group = null;
             }),
+          ),
+          IconButton(
+            tooltip: 'Atualizar o guia de programação (EPG)',
+            icon: const Icon(Icons.event_note),
+            onPressed: (cur == null || _epgBusy)
+                ? null
+                : () => _refreshEpg(force: true),
           ),
           IconButton(
             tooltip: 'Baixar a lista novamente',
@@ -231,11 +357,11 @@ class _HomePageState extends State<HomePage> {
                 child: const Text('Criar perfil'),
               ),
             )
-          : FutureBuilder<Catalog>(future: _future, builder: _content),
+          : FutureBuilder<CatalogDb>(future: _future, builder: _content),
     );
   }
 
-  Widget _content(BuildContext context, AsyncSnapshot<Catalog> snap) {
+  Widget _content(BuildContext context, AsyncSnapshot<CatalogDb> snap) {
     if (snap.connectionState != ConnectionState.done) {
       return const Center(
         child: Column(
@@ -243,7 +369,9 @@ class _HomePageState extends State<HomePage> {
           children: <Widget>[
             CircularProgressIndicator(),
             SizedBox(height: 12),
-            Text('Baixando e lendo a lista...'),
+            Text(
+              'Baixando e preparando a lista (só demora na primeira vez)...',
+            ),
           ],
         ),
       );
@@ -267,23 +395,41 @@ class _HomePageState extends State<HomePage> {
       );
     }
 
-    final Map<String, List<Channel>> groupsMap = snap.data![_section]!;
+    final CatalogDb db = snap.data!;
+    final UserData? user = _user;
+    if (user == null) return const SizedBox.shrink();
+
+    final Map<String, int> counts = _counts[_section] ??= db.groupCounts(
+      _section,
+    );
+    final Set<String> hiddenGroups = user.hiddenGroups(_section);
     final List<String> groups =
-        groupsMap.keys
-            .where((String g) => !_hideAdult || !isAdultGroup(g))
+        counts.keys
+            .where((String g) => _showHidden || !hiddenGroups.contains(g))
             .toList()
           ..sort();
-    final List<Channel> all = groupsMap[_group] ?? const <Channel>[];
-    final String q = _query.toLowerCase();
-    final List<Channel> items = q.isEmpty
-        ? all
-        : all.where((Channel c) => c.name.toLowerCase().contains(q)).toList();
+
+    Set<String> hiddenItems = const <String>{};
+    List<Channel> items = const <Channel>[];
+    final String? group = _group;
+    if (group != null) {
+      hiddenItems = user.hiddenItems(_section, group);
+      items = db.items(
+        _section,
+        group,
+        _query,
+        exclude: _showHidden ? const <String>{} : hiddenItems,
+      );
+    }
 
     return Row(
       children: <Widget>[
-        SizedBox(width: 300, child: _groupColumn(groups, groupsMap)),
+        SizedBox(width: 260, child: _groupColumn(groups, counts, hiddenGroups)),
         const VerticalDivider(width: 1),
-        SizedBox(width: 340, child: _itemColumn(items)),
+        SizedBox(
+          width: _section == Section.live ? 380 : 520,
+          child: _itemColumn(items, hiddenItems),
+        ),
         const VerticalDivider(width: 1),
         Expanded(
           child: Column(
@@ -299,8 +445,10 @@ class _HomePageState extends State<HomePage> {
 
   Widget _groupColumn(
     List<String> groups,
-    Map<String, List<Channel>> groupsMap,
+    Map<String, int> counts,
+    Set<String> hiddenGroups,
   ) {
+    final ThemeData t = Theme.of(context);
     return Column(
       children: <Widget>[
         Padding(
@@ -334,11 +482,31 @@ class _HomePageState extends State<HomePage> {
             itemCount: groups.length,
             itemBuilder: (BuildContext context, int i) {
               final String g = groups[i];
+              final bool hidden = hiddenGroups.contains(g);
               return ListTile(
                 dense: true,
                 selected: g == _group,
-                title: Text(g, maxLines: 1, overflow: TextOverflow.ellipsis),
-                trailing: Text('${groupsMap[g]!.length}'),
+                title: Text(
+                  g,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: hidden
+                      ? TextStyle(
+                          decoration: TextDecoration.lineThrough,
+                          color: t.disabledColor,
+                        )
+                      : null,
+                ),
+                trailing: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: <Widget>[
+                    Text('${counts[g]}'),
+                    HideMenu(
+                      hidden: hidden,
+                      onToggle: () => _toggleGroup(g, hidden),
+                    ),
+                  ],
+                ),
                 onTap: () => setState(() {
                   _group = g;
                   _query = '';
@@ -347,11 +515,78 @@ class _HomePageState extends State<HomePage> {
             },
           ),
         ),
+        if (_epgStatus != null)
+          Padding(
+            padding: const EdgeInsets.all(8),
+            child: Row(
+              children: <Widget>[
+                if (_epgBusy) ...<Widget>[
+                  const SizedBox(
+                    width: 12,
+                    height: 12,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+                  const SizedBox(width: 8),
+                ],
+                Expanded(
+                  child: Text(_epgStatus!, style: t.textTheme.bodySmall),
+                ),
+              ],
+            ),
+          ),
       ],
     );
   }
 
-  Widget _itemColumn(List<Channel> items) {
+  Widget _itemColumn(List<Channel> items, Set<String> hiddenItems) {
+    final bool live = _section == Section.live;
+    final int now = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+    Widget body;
+    if (_group == null) {
+      body = const Center(child: Text('Escolha uma categoria'));
+    } else if (items.isEmpty) {
+      body = const Center(child: Text('Nada por aqui'));
+    } else if (live) {
+      body = ListView.builder(
+        itemCount: items.length,
+        itemBuilder: (BuildContext context, int i) {
+          final Channel c = items[i];
+          final bool hidden = hiddenItems.contains(c.name);
+          return LiveTile(
+            channel: c,
+            selected: c.url == _playingUrl,
+            hidden: hidden,
+            nowSecs: now,
+            current: _epg?.nowNext(c.tvgId, now).$1,
+            onTap: () => _play(c),
+            onToggleHidden: () => _toggleItem(c, hidden),
+          );
+        },
+      );
+    } else {
+      body = GridView.builder(
+        padding: const EdgeInsets.all(8),
+        gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+          maxCrossAxisExtent: 150,
+          childAspectRatio: 0.58,
+          mainAxisSpacing: 8,
+          crossAxisSpacing: 8,
+        ),
+        itemCount: items.length,
+        itemBuilder: (BuildContext context, int i) {
+          final Channel c = items[i];
+          final bool hidden = hiddenItems.contains(c.name);
+          return PosterCard(
+            channel: c,
+            selected: c.url == _playingUrl,
+            hidden: hidden,
+            onTap: () => _play(c),
+            onToggleHidden: () => _toggleItem(c, hidden),
+          );
+        },
+      );
+    }
+
     return Column(
       children: <Widget>[
         Padding(
@@ -367,22 +602,7 @@ class _HomePageState extends State<HomePage> {
             onChanged: (String v) => setState(() => _query = v),
           ),
         ),
-        Expanded(
-          child: _group == null
-              ? const Center(child: Text('Escolha uma categoria'))
-              : ListView.builder(
-                  itemCount: items.length,
-                  itemBuilder: (BuildContext context, int i) => ListTile(
-                    dense: true,
-                    title: Text(
-                      items[i].name,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    onTap: () => _play(items[i]),
-                  ),
-                ),
-        ),
+        Expanded(child: body),
       ],
     );
   }
