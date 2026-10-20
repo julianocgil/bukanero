@@ -31,6 +31,7 @@ class _ProfileDialogState extends State<_ProfileDialog> {
   late final TextEditingController _epg = TextEditingController(
     text: widget.initial?.epgUrl ?? '',
   );
+  late bool _insecure = widget.initial?.allowInsecure ?? false;
   String? _error;
 
   @override
@@ -71,6 +72,7 @@ class _ProfileDialogState extends State<_ProfileDialog> {
         name: name,
         url: url,
         epgUrl: epg.isEmpty ? null : epg,
+        allowInsecure: _insecure,
       ),
     );
   }
@@ -100,6 +102,18 @@ class _ProfileDialogState extends State<_ProfileDialog> {
               controller: _epg,
               decoration: const InputDecoration(
                 labelText: 'Guia XMLTV (opcional; vazio = detectar sozinho)',
+              ),
+            ),
+            CheckboxListTile(
+              contentPadding: EdgeInsets.zero,
+              controlAffinity: ListTileControlAffinity.leading,
+              value: _insecure,
+              onChanged: (bool? v) => setState(() => _insecure = v ?? false),
+              title: const Text(
+                'Aceitar o certificado inválido deste servidor',
+              ),
+              subtitle: const Text(
+                'Só para listas em que você confia. Desmarcado é mais seguro.',
               ),
             ),
             if (_error != null)

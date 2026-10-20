@@ -25,8 +25,40 @@ const List<String> _userAgents = <String>[
   'MeuIPTV/0.1',
 ];
 
+String _tlsMessage(TlsException e) {
+  final String t = e.toString().toLowerCase();
+  const String hint =
+      ' Se você confia neste servidor, marque "Aceitar o certificado '
+      'inválido" em Editar perfil.';
+  if (t.contains('self signed') || t.contains('self-signed')) {
+    return 'o servidor usa um certificado autoassinado.$hint';
+  }
+  if (t.contains('expired')) {
+    return 'o certificado do servidor está vencido (ou a data do PC está '
+        'errada).$hint';
+  }
+  if (t.contains('hostname') || t.contains('host name')) {
+    return 'o certificado do servidor é de outro domínio.$hint';
+  }
+  if (t.contains('issuer') || t.contains('unknown ca')) {
+    return 'o certificado do servidor vem de uma autoridade desconhecida.$hint';
+  }
+  if (t.contains('wrong_version_number') || t.contains('wrong version')) {
+    return 'o servidor não fala TLS nesta porta; tente http:// no lugar de '
+        'https://.';
+  }
+  return 'falha de TLS/certificado ao conectar';
+}
+
 /// Baixa [url] (http/https) para [dest], em streaming.
-Future<void> downloadFile(String url, File dest) async {
+///
+/// Com [allowInsecure], aceita certificado inválido, mas só do próprio
+/// servidor da [url] (redirecionamentos para outros domínios são validados).
+Future<void> downloadFile(
+  String url,
+  File dest, {
+  bool allowInsecure = false,
+}) async {
   final Uri? uri = Uri.tryParse(url.trim());
   if (uri == null ||
       !(uri.scheme == 'http' || uri.scheme == 'https') ||
@@ -36,14 +68,14 @@ Future<void> downloadFile(String url, File dest) async {
   int? lastStatus;
   for (final String ua in _userAgents) {
     try {
-      await _fetchOnce(uri, dest, ua);
+      await _fetchOnce(uri, dest, ua, allowInsecure);
       return;
     } on _Rejected catch (e) {
       lastStatus = e.status;
     } on TimeoutException {
       throw const DownloadException('tempo esgotado: o servidor não respondeu');
-    } on TlsException {
-      throw const DownloadException('falha de TLS/certificado ao conectar');
+    } on TlsException catch (e) {
+      throw DownloadException(_tlsMessage(e));
     } on SocketException catch (e) {
       if (e.message.contains('Failed host lookup')) {
         throw const DownloadException(
@@ -64,9 +96,16 @@ Future<void> downloadFile(String url, File dest) async {
   );
 }
 
-Future<void> _fetchOnce(Uri uri, File dest, String ua) async {
+Future<void> _fetchOnce(
+  Uri uri,
+  File dest,
+  String ua,
+  bool allowInsecure,
+) async {
   final HttpClient client = HttpClient()
-    ..connectionTimeout = const Duration(seconds: 20);
+    ..connectionTimeout = const Duration(seconds: 20)
+    ..badCertificateCallback = (X509Certificate cert, String host, int port) =>
+        allowInsecure && host == uri.host;
   final File tmp = File('${dest.path}.part');
   try {
     final HttpClientRequest req = await client.getUrl(uri);

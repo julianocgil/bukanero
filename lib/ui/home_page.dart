@@ -105,7 +105,8 @@ class _HomePageState extends State<HomePage> {
     String m3u = src;
     if (remote) {
       final File cache = playlistCacheFile(p);
-      if (refresh || !cache.existsSync()) await downloadFile(src, cache);
+      if (refresh || !cache.existsSync())
+        await downloadFile(src, cache, allowInsecure: p.allowInsecure);
       m3u = cache.path;
     }
     final String dbPath = catalogDbPath(p);
@@ -151,7 +152,7 @@ class _HomePageState extends State<HomePage> {
       _epgStatus = 'Baixando o guia de programação...';
     });
     try {
-      final int n = await importEpg(urls, path);
+      final int n = await importEpg(urls, path, allowInsecure: p.allowInsecure);
       final CatalogDb? cur = _db;
       if (!mounted || cur == null || _profile?.id != p.id) {
         _epgBusy = false;

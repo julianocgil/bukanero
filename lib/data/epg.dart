@@ -95,7 +95,11 @@ String _explain(Exception e) {
 
 /// Baixa (ou lê) o XMLTV de cada fonte e guarda só a janela de -3 h a +48 h.
 /// Devolve quantos programas foram gravados.
-Future<int> importEpg(List<String> sources, String dbPath) {
+Future<int> importEpg(
+  List<String> sources,
+  String dbPath, {
+  bool allowInsecure = false,
+}) {
   return Isolate.run<int>(() async {
     final File tmp = File('$dbPath.tmp');
     if (tmp.existsSync()) tmp.deleteSync();
@@ -118,7 +122,9 @@ Future<int> importEpg(List<String> sources, String dbPath) {
             src.startsWith('http://') || src.startsWith('https://');
         final File file = remote ? File('$dbPath.dl') : File(src);
         try {
-          if (remote) await downloadFile(src, file);
+          if (remote) {
+            await downloadFile(src, file, allowInsecure: allowInsecure);
+          }
           total += await _parseInto(
             file,
             db,
