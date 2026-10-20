@@ -9,7 +9,7 @@ import '../domain/section.dart';
 import 'epg.dart';
 import 'm3u/m3u_parser.dart';
 
-const int _schemaVersion = 2;
+const int _schemaVersion = 3;
 
 String _stamp(String path) {
   final FileStat s = File(path).statSync();

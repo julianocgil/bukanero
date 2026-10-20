@@ -16,7 +16,7 @@ List<String> epgUrlsFromHeader(String line) {
   final List<String> urls = <String>[];
   for (final RegExpMatch m in _hdrAttr.allMatches(line)) {
     final String key = m.group(1)!.toLowerCase();
-    if (key == 'url-tvg' || key == 'x-tvg-url' || key == 'tvg-url') {
+    if (key.contains('tvg') || key.contains('epg') || key.contains('xmltv')) {
       for (final String u in m.group(2)!.split(',')) {
         final String t = u.trim();
         if (t.startsWith('http://') || t.startsWith('https://')) urls.add(t);

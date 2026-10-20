@@ -134,16 +134,10 @@ class _HomePageState extends State<HomePage> {
       urls = <String>[manual];
     } else {
       urls = db.epgUrls();
-      if (urls.isEmpty) {
-        final String? derived = deriveXtreamEpgUrl(p.url);
-        urls = derived == null ? <String>[] : <String>[derived];
-      }
     }
     if (urls.isEmpty) {
       setState(
-        () => _epgStatus =
-            'Esta lista não informa o guia (EPG). '
-            'Informe a URL XMLTV em Editar perfil.',
+        () => _epgStatus = 'Esta lista não informa o endereço do guia (EPG).',
       );
       return;
     }
