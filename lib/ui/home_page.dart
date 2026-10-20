@@ -105,8 +105,9 @@ class _HomePageState extends State<HomePage> {
     String m3u = src;
     if (remote) {
       final File cache = playlistCacheFile(p);
-      if (refresh || !cache.existsSync())
+      if (refresh || !cache.existsSync()) {
         await downloadFile(src, cache, allowInsecure: p.allowInsecure);
+      }
       m3u = cache.path;
     }
     final String dbPath = catalogDbPath(p);
