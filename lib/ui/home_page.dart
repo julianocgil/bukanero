@@ -45,6 +45,9 @@ class _HomePageState extends State<HomePage> {
   EpgDb? _epg;
   bool _epgBusy = false;
   bool _metaBusy = false;
+  bool _listBusy = false;
+  // Progresso do download da lista (tela de carregamento e barra de cima).
+  final ValueNotifier<String?> _listProgress = ValueNotifier<String?>(null);
   String? _epgStatus;
   final Map<Section, Map<String, int>> _counts = <Section, Map<String, int>>{};
   Section _section = Section.live;
@@ -84,6 +87,7 @@ class _HomePageState extends State<HomePage> {
     _debounce?.cancel();
     _searchCtl.dispose();
     _closeData();
+    _listProgress.dispose();
     _perf.dispose();
     _player.dispose();
     super.dispose();
@@ -128,7 +132,15 @@ class _HomePageState extends State<HomePage> {
     if (remote) {
       final File cache = playlistCacheFile(p);
       if (refresh || !cache.existsSync()) {
-        await downloadFile(src, cache, allowInsecure: p.allowInsecure);
+        try {
+          await _downloadList(p, cache);
+        } on DownloadException catch (e) {
+          // Sem lista nova, mas com a anterior guardada: segue com ela.
+          if (!cache.existsSync()) rethrow;
+          _toast('Não consegui baixar a lista ($e). Usando a lista anterior.');
+        } finally {
+          _listProgress.value = null;
+        }
       }
       m3u = cache.path;
     }
@@ -147,6 +159,79 @@ class _HomePageState extends State<HomePage> {
     _epg = EpgDb.tryOpen(epgDbPath(p));
     unawaited(Future<void>.microtask(() => _refreshEpg()));
     return db;
+  }
+
+  static String _mb(int bytes) =>
+      (bytes / (1024 * 1024)).toStringAsFixed(1).replaceAll('.', ',');
+
+  Future<void> _downloadList(Profile p, File cache) {
+    int shown = -1;
+    return downloadFile(
+      p.url.trim(),
+      cache,
+      allowInsecure: p.allowInsecure,
+      onProgress: (int received, int? total) {
+        // Atualiza o texto a cada 0,1 MB, não a cada pedaço recebido.
+        final int step = received ~/ (100 * 1024);
+        if (step == shown) return;
+        shown = step;
+        _listProgress.value = total == null
+            ? '${_mb(received)} MB baixados'
+            : '${_mb(received)} de ${_mb(total)} MB';
+      },
+    );
+  }
+
+  /// Baixa e prepara a lista nova por trás; a atual continua na tela (e o
+  /// vídeo, tocando) até a nova ficar pronta. Se falhar, nada muda.
+  Future<void> _refreshList() async {
+    final Profile? p = _profile;
+    if (p == null || _listBusy) return;
+    if (_db == null) {
+      _select(p, refresh: true);
+      return;
+    }
+    final String src = p.url.trim();
+    final bool remote = src.startsWith('http://') || src.startsWith('https://');
+    setState(() => _listBusy = true);
+    _listProgress.value = 'Conectando ao servidor...';
+    try {
+      String m3u = src;
+      if (remote) {
+        final File cache = playlistCacheFile(p);
+        await _downloadList(p, cache);
+        m3u = cache.path;
+      }
+      _listProgress.value = 'Preparando a lista nova...';
+      final String dbPath = catalogDbPath(p);
+      if (!catalogIsFresh(dbPath, m3u)) await importCatalog(m3u, dbPath);
+      await ensureSeriesIndex(dbPath, seriesDbPath(p));
+      if (!mounted || _profile?.id != p.id) return;
+      _swapCatalog(p, dbPath);
+      _toast('Lista atualizada.');
+      unawaited(_refreshMeta(force: true));
+    } on Object catch (e) {
+      _toast('Não consegui atualizar a lista ($e). Continuo com a anterior.');
+    } finally {
+      _listProgress.value = null;
+      if (mounted) setState(() => _listBusy = false);
+    }
+  }
+
+  /// Troca o catálogo aberto pelo recém-importado, sem parar o vídeo.
+  void _swapCatalog(Profile p, String dbPath) {
+    final CatalogDb db = CatalogDb.open(dbPath);
+    final SeriesDb series = SeriesDb.open(seriesDbPath(p));
+    final String metaPath = metaDbPath(p);
+    db.attachMeta(metaPath);
+    series.attachMeta(metaPath);
+    setState(() {
+      _db?.close();
+      _series?.close();
+      _db = db;
+      _series = series;
+      _counts.clear();
+    });
   }
 
   Future<void> _refreshEpg({bool force = false}) async {
@@ -432,6 +517,28 @@ class _HomePageState extends State<HomePage> {
     final Profile? cur = _profile;
     return Scaffold(
       appBar: AppBar(
+        bottom: _listBusy
+            ? PreferredSize(
+                preferredSize: const Size.fromHeight(24),
+                child: ValueListenableBuilder<String?>(
+                  valueListenable: _listProgress,
+                  builder: (BuildContext context, String? v, Widget? _) =>
+                      Column(
+                        children: <Widget>[
+                          const LinearProgressIndicator(minHeight: 2),
+                          Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 3),
+                            child: Text(
+                              'Atualizando a lista: ${v ?? ''} '
+                              '(pode continuar usando)',
+                              style: Theme.of(context).textTheme.bodySmall,
+                            ),
+                          ),
+                        ],
+                      ),
+                ),
+              )
+            : null,
         title: Text(
           _playing ?? 'Bukanero${cur == null ? '' : ' · ${cur.name}'}',
         ),
@@ -471,9 +578,11 @@ class _HomePageState extends State<HomePage> {
                 : () => _refreshEpg(force: true),
           ),
           IconButton(
-            tooltip: 'Baixar a lista novamente',
+            tooltip: _listBusy
+                ? 'Atualizando a lista...'
+                : 'Atualizar a lista (em segundo plano)',
             icon: const Icon(Icons.refresh),
-            onPressed: cur == null ? null : () => _select(cur, refresh: true),
+            onPressed: (cur == null || _listBusy) ? null : _refreshList,
           ),
           PopupMenuButton<SortMode>(
             tooltip: 'Ordenar',
@@ -537,14 +646,19 @@ class _HomePageState extends State<HomePage> {
 
   Widget _content(BuildContext context, AsyncSnapshot<CatalogDb> snap) {
     if (snap.connectionState != ConnectionState.done) {
-      return const Center(
+      return Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: <Widget>[
-            CircularProgressIndicator(),
-            SizedBox(height: 12),
-            Text(
+            const CircularProgressIndicator(),
+            const SizedBox(height: 12),
+            const Text(
               'Baixando e preparando a lista (só demora na primeira vez)...',
+            ),
+            ValueListenableBuilder<String?>(
+              valueListenable: _listProgress,
+              builder: (BuildContext context, String? v, Widget? _) =>
+                  Text(v ?? '', style: Theme.of(context).textTheme.bodySmall),
             ),
           ],
         ),
@@ -569,7 +683,8 @@ class _HomePageState extends State<HomePage> {
       );
     }
 
-    final CatalogDb db = snap.data!;
+    // Depois de uma atualização em segundo plano, _db é o catálogo novo.
+    final CatalogDb db = _db ?? snap.data!;
     final SortMode curSort = _sorts[_section] ?? SortMode.listOrder;
     db.sort = curSort;
     _series?.sort = curSort;

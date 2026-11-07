@@ -11,6 +11,29 @@ class DownloadException implements Exception {
   String toString() => message;
 }
 
+/// Limites para não ficar esperando um servidor travado para sempre.
+class DownloadLimits {
+  const DownloadLimits({
+    this.idle = const Duration(seconds: 30),
+    this.slowWindow = const Duration(seconds: 60),
+    this.slowMinBytes = 32 * 1024,
+    this.total = const Duration(minutes: 15),
+  });
+
+  /// Tempo máximo sem chegar nenhum dado.
+  final Duration idle;
+
+  /// Em cada janela destas, precisa chegar pelo menos [slowMinBytes].
+  final Duration slowWindow;
+  final int slowMinBytes;
+
+  /// Tempo máximo do download inteiro.
+  final Duration total;
+}
+
+/// Bytes recebidos e, quando o servidor informa, o tamanho total.
+typedef DownloadProgress = void Function(int received, int? total);
+
 class _Rejected implements Exception {
   const _Rejected(this.status);
 
@@ -54,10 +77,13 @@ String _tlsMessage(TlsException e) {
 ///
 /// Com [allowInsecure], aceita certificado inválido, mas só do próprio
 /// servidor da [url] (redirecionamentos para outros domínios são validados).
+/// [dest] só é trocado quando o download termina inteiro.
 Future<void> downloadFile(
   String url,
   File dest, {
   bool allowInsecure = false,
+  DownloadProgress? onProgress,
+  DownloadLimits limits = const DownloadLimits(),
 }) async {
   final Uri? uri = Uri.tryParse(url.trim());
   if (uri == null ||
@@ -68,12 +94,12 @@ Future<void> downloadFile(
   int? lastStatus;
   for (final String ua in _userAgents) {
     try {
-      await _fetchOnce(uri, dest, ua, allowInsecure);
+      await _fetchOnce(uri, dest, ua, allowInsecure, onProgress, limits);
       return;
     } on _Rejected catch (e) {
       lastStatus = e.status;
     } on TimeoutException {
-      throw const DownloadException('tempo esgotado: o servidor não respondeu');
+      throw const DownloadException('o servidor parou de responder');
     } on TlsException catch (e) {
       throw DownloadException(_tlsMessage(e));
     } on SocketException catch (e) {
@@ -87,6 +113,9 @@ Future<void> downloadFile(
         'falha de conexão (${e.osError?.message ?? 'rede'})',
       );
     } on HttpException catch (e) {
+      if (e.message.toLowerCase().contains('connection closed')) {
+        throw const DownloadException('o download chegou incompleto');
+      }
       throw DownloadException('resposta HTTP inválida: ${e.message}');
     }
   }
@@ -101,6 +130,8 @@ Future<void> _fetchOnce(
   File dest,
   String ua,
   bool allowInsecure,
+  DownloadProgress? onProgress,
+  DownloadLimits limits,
 ) async {
   final HttpClient client = HttpClient()
     ..connectionTimeout = const Duration(seconds: 20)
@@ -116,7 +147,7 @@ Future<void> _fetchOnce(
     );
     final int code = res.statusCode;
     if (code == 200) {
-      await res.timeout(const Duration(seconds: 60)).pipe(tmp.openWrite());
+      await _receive(res, tmp, onProgress, limits);
       if (tmp.lengthSync() == 0) {
         throw const DownloadException('o servidor devolveu uma resposta vazia');
       }
@@ -132,5 +163,47 @@ Future<void> _fetchOnce(
   } finally {
     client.close(force: true);
     if (tmp.existsSync()) tmp.deleteSync();
+  }
+}
+
+Future<void> _receive(
+  HttpClientResponse res,
+  File tmp,
+  DownloadProgress? onProgress,
+  DownloadLimits limits,
+) async {
+  final int? total = res.contentLength > 0 ? res.contentLength : null;
+  final IOSink sink = tmp.openWrite();
+  final Stopwatch clock = Stopwatch()..start();
+  int received = 0;
+  int windowStart = 0;
+  int windowBytes = 0;
+  try {
+    await for (final List<int> chunk in res.timeout(limits.idle)) {
+      sink.add(chunk);
+      received += chunk.length;
+      windowBytes += chunk.length;
+      onProgress?.call(received, total);
+      final int now = clock.elapsedMilliseconds;
+      if (now - windowStart >= limits.slowWindow.inMilliseconds) {
+        if (windowBytes < limits.slowMinBytes) {
+          throw const DownloadException(
+            'o servidor está mandando os dados devagar demais',
+          );
+        }
+        windowStart = now;
+        windowBytes = 0;
+      }
+      if (clock.elapsed > limits.total) {
+        throw DownloadException(
+          'o download passou de ${limits.total.inMinutes} min e foi cancelado',
+        );
+      }
+    }
+  } finally {
+    await sink.close();
+  }
+  if (total != null && received < total) {
+    throw const DownloadException('o download chegou incompleto');
   }
 }
