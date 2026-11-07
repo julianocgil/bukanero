@@ -46,6 +46,9 @@ class _HomePageState extends State<HomePage> {
   bool _epgBusy = false;
   bool _metaBusy = false;
   bool _listBusy = false;
+  // Confere de tempos em tempos se a lista passou do intervalo do perfil.
+  Timer? _autoRefresh;
+  DateTime? _autoFailedAt;
   // Progresso do download da lista (tela de carregamento e barra de cima).
   final ValueNotifier<String?> _listProgress = ValueNotifier<String?>(null);
   String? _epgStatus;
@@ -67,6 +70,10 @@ class _HomePageState extends State<HomePage> {
   @override
   void initState() {
     super.initState();
+    _autoRefresh = Timer.periodic(
+      const Duration(minutes: 10),
+      (_) => _maybeAutoRefresh(),
+    );
     _profiles = loadProfiles();
     if (_profiles.isEmpty) {
       WidgetsBinding.instance.addPostFrameCallback((_) => _addProfile());
@@ -85,6 +92,7 @@ class _HomePageState extends State<HomePage> {
   @override
   void dispose() {
     _debounce?.cancel();
+    _autoRefresh?.cancel();
     _searchCtl.dispose();
     _closeData();
     _listProgress.dispose();
@@ -158,6 +166,7 @@ class _HomePageState extends State<HomePage> {
     unawaited(Future<void>.microtask(() => _refreshMeta(force: refresh)));
     _epg = EpgDb.tryOpen(epgDbPath(p));
     unawaited(Future<void>.microtask(() => _refreshEpg()));
+    unawaited(Future<void>.microtask(_maybeAutoRefresh));
     return db;
   }
 
@@ -182,9 +191,27 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
+  /// Atualiza sozinho quando a lista baixada passou do intervalo do perfil.
+  /// Depois de uma falha, espera uma hora antes de tentar de novo.
+  void _maybeAutoRefresh() {
+    final Profile? p = _profile;
+    if (!mounted || p == null || _db == null || _listBusy) return;
+    final String src = p.url.trim();
+    if (!(src.startsWith('http://') || src.startsWith('https://'))) return;
+    final DateTime now = DateTime.now();
+    final DateTime? failed = _autoFailedAt;
+    if (failed != null && now.difference(failed) < const Duration(hours: 1)) {
+      return;
+    }
+    final File cache = playlistCacheFile(p);
+    if (!cache.existsSync()) return;
+    if (!p.listRefreshDue(cache.lastModifiedSync(), now)) return;
+    unawaited(_refreshList(auto: true));
+  }
+
   /// Baixa e prepara a lista nova por trás; a atual continua na tela (e o
   /// vídeo, tocando) até a nova ficar pronta. Se falhar, nada muda.
-  Future<void> _refreshList() async {
+  Future<void> _refreshList({bool auto = false}) async {
     final Profile? p = _profile;
     if (p == null || _listBusy) return;
     if (_db == null) {
@@ -208,10 +235,15 @@ class _HomePageState extends State<HomePage> {
       await ensureSeriesIndex(dbPath, seriesDbPath(p));
       if (!mounted || _profile?.id != p.id) return;
       _swapCatalog(p, dbPath);
-      _toast('Lista atualizada.');
+      _autoFailedAt = null;
+      _toast(auto ? 'Lista atualizada automaticamente.' : 'Lista atualizada.');
       unawaited(_refreshMeta(force: true));
     } on Object catch (e) {
-      _toast('Não consegui atualizar a lista ($e). Continuo com a anterior.');
+      if (auto) _autoFailedAt = DateTime.now();
+      _toast(
+        'Não consegui atualizar a lista ($e). Continuo com a anterior'
+        '${auto ? '; tento de novo daqui a uma hora' : ''}.',
+      );
     } finally {
       _listProgress.value = null;
       if (mounted) setState(() => _listBusy = false);
@@ -354,6 +386,15 @@ class _HomePageState extends State<HomePage> {
       ];
     });
     saveProfiles(_profiles);
+    if (p.url == cur.url &&
+        p.epgUrl == cur.epgUrl &&
+        p.allowInsecure == cur.allowInsecure) {
+      // Só nome ou intervalo de atualização: não precisa recarregar nem
+      // parar o vídeo.
+      setState(() => _profile = p);
+      _maybeAutoRefresh();
+      return;
+    }
     if (p.epgUrl != cur.epgUrl || p.url != cur.url) deleteEpg(cur);
     _select(p, refresh: p.url != cur.url);
   }

@@ -32,6 +32,17 @@ class _ProfileDialogState extends State<_ProfileDialog> {
     text: widget.initial?.epgUrl ?? '',
   );
   late bool _insecure = widget.initial?.allowInsecure ?? false;
+  late int _refreshHours =
+      widget.initial?.refreshHours ?? Profile.defaultRefreshHours;
+
+  static const Map<int, String> _refreshOptions = <int, String>{
+    6: 'A cada 6 horas',
+    12: 'A cada 12 horas',
+    24: 'A cada 24 horas (padrão)',
+    48: 'A cada 2 dias',
+    168: 'Uma vez por semana',
+    0: 'Nunca (só quando eu pedir)',
+  };
   String? _error;
 
   @override
@@ -73,6 +84,7 @@ class _ProfileDialogState extends State<_ProfileDialog> {
         url: url,
         epgUrl: epg.isEmpty ? null : epg,
         allowInsecure: _insecure,
+        refreshHours: _refreshHours,
       ),
     );
   }
@@ -102,6 +114,22 @@ class _ProfileDialogState extends State<_ProfileDialog> {
               controller: _epg,
               decoration: const InputDecoration(
                 labelText: 'Guia XMLTV (opcional; vazio = detectar sozinho)',
+              ),
+            ),
+            const SizedBox(height: 12),
+            DropdownButtonFormField<int>(
+              initialValue: _refreshOptions.containsKey(_refreshHours)
+                  ? _refreshHours
+                  : Profile.defaultRefreshHours,
+              decoration: const InputDecoration(
+                labelText: 'Atualizar a lista sozinho',
+              ),
+              items: <DropdownMenuItem<int>>[
+                for (final MapEntry<int, String> e in _refreshOptions.entries)
+                  DropdownMenuItem<int>(value: e.key, child: Text(e.value)),
+              ],
+              onChanged: (int? v) => setState(
+                () => _refreshHours = v ?? Profile.defaultRefreshHours,
               ),
             ),
             CheckboxListTile(
