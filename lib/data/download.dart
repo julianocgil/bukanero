@@ -11,6 +11,15 @@ class DownloadException implements Exception {
   String toString() => message;
 }
 
+/// Download interrompido de propósito (perfil trocado ou apagado).
+class DownloadCancelled extends DownloadException {
+  const DownloadCancelled() : super('cancelado');
+}
+
+/// Chamada entre um pedaço e outro do download; pode esperar (dar a vez ao
+/// vídeo) ou lançar [DownloadCancelled].
+typedef DownloadGate = Future<void> Function();
+
 /// Limites para não ficar esperando um servidor travado para sempre.
 class DownloadLimits {
   const DownloadLimits({
@@ -77,14 +86,17 @@ String _tlsMessage(TlsException e) {
 ///
 /// Com [allowInsecure], aceita certificado inválido, mas só do próprio
 /// servidor da [url] (redirecionamentos para outros domínios são validados).
-/// [dest] só é trocado quando o download termina inteiro.
+/// [dest] só é trocado quando o download termina inteiro. O tempo parado
+/// em [gate] não conta para os limites.
 Future<void> downloadFile(
   String url,
   File dest, {
   bool allowInsecure = false,
   DownloadProgress? onProgress,
   DownloadLimits limits = const DownloadLimits(),
+  DownloadGate? gate,
 }) async {
+  await gate?.call();
   final Uri? uri = Uri.tryParse(url.trim());
   if (uri == null ||
       !(uri.scheme == 'http' || uri.scheme == 'https') ||
@@ -94,7 +106,7 @@ Future<void> downloadFile(
   int? lastStatus;
   for (final String ua in _userAgents) {
     try {
-      await _fetchOnce(uri, dest, ua, allowInsecure, onProgress, limits);
+      await _fetchOnce(uri, dest, ua, allowInsecure, onProgress, limits, gate);
       return;
     } on _Rejected catch (e) {
       lastStatus = e.status;
@@ -132,6 +144,7 @@ Future<void> _fetchOnce(
   bool allowInsecure,
   DownloadProgress? onProgress,
   DownloadLimits limits,
+  DownloadGate? gate,
 ) async {
   final HttpClient client = HttpClient()
     ..connectionTimeout = const Duration(seconds: 20)
@@ -147,7 +160,7 @@ Future<void> _fetchOnce(
     );
     final int code = res.statusCode;
     if (code == 200) {
-      await _receive(res, tmp, onProgress, limits);
+      await _receive(res, tmp, onProgress, limits, gate);
       if (tmp.lengthSync() == 0) {
         throw const DownloadException('o servidor devolveu uma resposta vazia');
       }
@@ -171,6 +184,7 @@ Future<void> _receive(
   File tmp,
   DownloadProgress? onProgress,
   DownloadLimits limits,
+  DownloadGate? gate,
 ) async {
   final int? total = res.contentLength > 0 ? res.contentLength : null;
   final IOSink sink = tmp.openWrite();
@@ -184,6 +198,13 @@ Future<void> _receive(
       received += chunk.length;
       windowBytes += chunk.length;
       onProgress?.call(received, total);
+      if (gate != null) {
+        // Parado esperando (o vídeo tem prioridade): o relógio também para,
+        // senão o download pareceria lento ou demorado demais.
+        clock.stop();
+        await gate();
+        clock.start();
+      }
       final int now = clock.elapsedMilliseconds;
       if (now - windowStart >= limits.slowWindow.inMilliseconds) {
         if (windowBytes < limits.slowMinBytes) {

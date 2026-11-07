@@ -4,9 +4,12 @@ import 'dart:io';
 
 import 'package:crypto/crypto.dart';
 
+import 'bandwidth.dart';
 import 'profile_store.dart';
 
 const int _maxActive = 6;
+// Com vídeo tocando, menos capas de cada vez: a banda é dele.
+const int _maxWhileVideo = 2;
 const int _maxBytes = 10 * 1024 * 1024;
 const Duration _retryAfter = Duration(seconds: 60);
 // Ao passar rápido pela lista, espera um instante antes de baixar: se o
@@ -30,8 +33,20 @@ final HttpClient _client = HttpClient()
   ..connectionTimeout = const Duration(seconds: 10)
   ..maxConnectionsPerHost = _maxActive;
 
+int get _limit => VideoPriority.videoActive ? _maxWhileVideo : _maxActive;
+StreamSubscription<bool>? _videoWatch;
+
+// Abre vagas quando o limite sobe (o vídeo parou).
+void _pump() {
+  while (_waiting.isNotEmpty && _active < _limit) {
+    _active++;
+    _waiting.removeLast().complete();
+  }
+}
+
 Future<void> _acquire() async {
-  if (_active < _maxActive) {
+  _videoWatch ??= VideoPriority.activeChanges.listen((_) => _pump());
+  if (_active < _limit) {
     _active++;
     return;
   }
@@ -41,7 +56,7 @@ Future<void> _acquire() async {
 }
 
 void _release() {
-  if (_waiting.isNotEmpty) {
+  if (_waiting.isNotEmpty && _active <= _limit) {
     _waiting.removeLast().complete();
   } else {
     _active--;
@@ -119,6 +134,9 @@ Future<File?> _fetch(String url) async {
   }
 
   await Future<void>.delayed(_settle);
+  if (!_wanted(url)) return null;
+  // Vídeo quase travando: as capas esperam ele recuperar a reserva.
+  await VideoPriority.waitTurn();
   if (!_wanted(url)) return null;
   await _acquire();
   if (!_wanted(url)) {

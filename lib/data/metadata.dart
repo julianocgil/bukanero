@@ -195,44 +195,84 @@ void buildMetadataDb(String dbPath, List<Object?> vod, List<Object?> series) {
 }
 
 /// Consulta a API do servidor e grava as notas e datas em [dbPath].
+///
+/// Os downloads ficam no isolate principal (para [gate] poder dar a vez ao
+/// vídeo); só a leitura dos JSONs grandes vai para outro isolate.
 Future<void> importMetadata(
   ApiAccess api,
   String dbPath, {
   bool allowInsecure = false,
-}) {
-  return Isolate.run<void>(() async {
-    String? lastError;
-
-    Future<List<Object?>> grab(String action) async {
-      final File f = File('$dbPath.$action.json');
-      try {
-        await downloadFile(
-          _apiUri(api, action).toString(),
-          f,
-          allowInsecure: allowInsecure,
-        );
-        final Object? data = jsonDecode(
-          utf8.decode(await f.readAsBytes(), allowMalformed: true),
-        );
-        return data is List<Object?> ? data : <Object?>[];
-      } on DownloadException catch (e) {
-        lastError = e.message;
-        return <Object?>[];
-      } on FormatException {
-        lastError = 'resposta do servidor não reconhecida';
-        return <Object?>[];
-      } finally {
-        if (f.existsSync()) f.deleteSync();
-      }
-    }
-
-    final List<Object?> vod = await grab('get_vod_streams');
-    final List<Object?> series = await grab('get_series');
-    if (vod.isEmpty && series.isEmpty) {
-      throw DownloadException(
-        lastError ?? 'o servidor não devolveu notas nem datas',
+  DownloadGate? gate,
+}) async {
+  String? lastError;
+  final List<File> files = <File>[];
+  Future<String?> grab(String action) async {
+    final File f = File('$dbPath.$action.json');
+    files.add(f);
+    try {
+      await downloadFile(
+        _apiUri(api, action).toString(),
+        f,
+        allowInsecure: allowInsecure,
+        gate: gate,
       );
+      return f.path;
+    } on DownloadCancelled {
+      rethrow;
+    } on DownloadException catch (e) {
+      lastError = e.message;
+      return null;
     }
-    buildMetadataDb(dbPath, vod, series);
-  });
+  }
+
+  try {
+    final String? vodPath = await grab('get_vod_streams');
+    final String? seriesPath = await grab('get_series');
+    await _buildInIsolate(vodPath, seriesPath, lastError, dbPath);
+  } finally {
+    for (final File f in files) {
+      if (f.existsSync()) f.deleteSync();
+    }
+  }
+}
+
+// Em função à parte: o que vai para o outro isolate leva só estes valores
+// (nunca o [gate], que segura a tela inteira).
+Future<void> _buildInIsolate(
+  String? vodPath,
+  String? seriesPath,
+  String? downloadError,
+  String dbPath,
+) => Isolate.run<void>(
+  () => _parseAndBuild(vodPath, seriesPath, downloadError, dbPath),
+);
+
+Future<void> _parseAndBuild(
+  String? vodPath,
+  String? seriesPath,
+  String? downloadError,
+  String dbPath,
+) async {
+  String? parseError;
+  Future<List<Object?>> read(String? path) async {
+    if (path == null) return <Object?>[];
+    try {
+      final Object? data = jsonDecode(
+        utf8.decode(await File(path).readAsBytes(), allowMalformed: true),
+      );
+      return data is List<Object?> ? data : <Object?>[];
+    } on FormatException {
+      parseError = 'resposta do servidor não reconhecida';
+      return <Object?>[];
+    }
+  }
+
+  final List<Object?> vod = await read(vodPath);
+  final List<Object?> series = await read(seriesPath);
+  if (vod.isEmpty && series.isEmpty) {
+    throw DownloadException(
+      downloadError ?? parseError ?? 'o servidor não devolveu notas nem datas',
+    );
+  }
+  buildMetadataDb(dbPath, vod, series);
 }

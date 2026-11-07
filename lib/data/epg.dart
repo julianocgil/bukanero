@@ -98,74 +98,106 @@ String _explain(Exception e) {
 
 /// Baixa (ou lê) o XMLTV de cada fonte e guarda só a janela de -3 h a +48 h.
 /// Devolve quantos programas foram gravados.
+///
+/// O download fica no isolate principal (para [gate] poder dar a vez ao
+/// vídeo); só a leitura do XML vai para outro isolate.
 Future<int> importEpg(
   List<String> sources,
   String dbPath, {
   bool allowInsecure = false,
-}) {
-  return Isolate.run<int>(() async {
-    final File tmp = File('$dbPath.tmp');
-    if (tmp.existsSync()) tmp.deleteSync();
-    final Database db = sqlite3.open(tmp.path);
-    int total = 0;
-    try {
-      db.execute(
-        'CREATE TABLE prog(channel TEXT NOT NULL, start INTEGER NOT NULL, '
-        'stop INTEGER NOT NULL, title TEXT NOT NULL, descr TEXT)',
-      );
-      db.execute(
-        'CREATE TABLE chan(nkey TEXT NOT NULL, channel TEXT NOT NULL)',
-      );
-      final PreparedStatement ins = db.prepare(
-        'INSERT INTO prog(channel, start, stop, title, descr) '
-        'VALUES (?, ?, ?, ?, ?)',
-      );
-      final PreparedStatement insChan = db.prepare(
-        'INSERT INTO chan(nkey, channel) VALUES (?, ?)',
-      );
-      final int now = DateTime.now().millisecondsSinceEpoch ~/ 1000;
-      int ok = 0;
-      String? lastError;
-      for (final String src in sources) {
-        final bool remote =
-            src.startsWith('http://') || src.startsWith('https://');
-        final File file = remote ? File('$dbPath.dl') : File(src);
-        try {
-          if (remote) {
-            await downloadFile(src, file, allowInsecure: allowInsecure);
-          }
-          total += await _parseInto(
-            file,
-            db,
-            ins,
-            insChan,
-            now - 3 * 3600,
-            now + 48 * 3600,
-          );
-          ok++;
-        } on Exception catch (e) {
-          lastError = _explain(e);
-        } finally {
-          if (remote && file.existsSync()) file.deleteSync();
-        }
+  DownloadGate? gate,
+}) async {
+  final List<String> local = <String>[];
+  final List<File> temps = <File>[];
+  String? lastError;
+  try {
+    for (int i = 0; i < sources.length; i++) {
+      final String src = sources[i];
+      if (!(src.startsWith('http://') || src.startsWith('https://'))) {
+        local.add(src);
+        continue;
       }
-      ins.close();
-      insChan.close();
-      if (ok == 0) {
-        throw DownloadException(
-          lastError ?? 'nenhuma fonte de guia disponível',
-        );
+      final File f = File('$dbPath.dl$i');
+      temps.add(f);
+      try {
+        await downloadFile(src, f, allowInsecure: allowInsecure, gate: gate);
+        local.add(f.path);
+      } on DownloadCancelled {
+        rethrow;
+      } on DownloadException catch (e) {
+        lastError = e.message;
       }
-      db.execute('CREATE INDEX idx_prog ON prog(channel, start)');
-      db.execute('CREATE INDEX idx_chan ON chan(nkey)');
-    } finally {
-      db.close();
     }
-    final File dest = File(dbPath);
-    if (dest.existsSync()) dest.deleteSync();
-    tmp.renameSync(dbPath);
-    return total;
-  });
+    return await _importInIsolate(local, dbPath, lastError);
+  } finally {
+    for (final File f in temps) {
+      if (f.existsSync()) f.deleteSync();
+    }
+  }
+}
+
+// Em função à parte: o que vai para o outro isolate leva só estes valores
+// (nunca o [gate], que segura a tela inteira).
+Future<int> _importInIsolate(
+  List<String> files,
+  String dbPath,
+  String? downloadError,
+) => Isolate.run<int>(() => _importLocal(files, dbPath, downloadError));
+
+Future<int> _importLocal(
+  List<String> files,
+  String dbPath,
+  String? downloadError,
+) async {
+  final File tmp = File('$dbPath.tmp');
+  if (tmp.existsSync()) tmp.deleteSync();
+  final Database db = sqlite3.open(tmp.path);
+  int total = 0;
+  try {
+    db.execute(
+      'CREATE TABLE prog(channel TEXT NOT NULL, start INTEGER NOT NULL, '
+      'stop INTEGER NOT NULL, title TEXT NOT NULL, descr TEXT)',
+    );
+    db.execute('CREATE TABLE chan(nkey TEXT NOT NULL, channel TEXT NOT NULL)');
+    final PreparedStatement ins = db.prepare(
+      'INSERT INTO prog(channel, start, stop, title, descr) '
+      'VALUES (?, ?, ?, ?, ?)',
+    );
+    final PreparedStatement insChan = db.prepare(
+      'INSERT INTO chan(nkey, channel) VALUES (?, ?)',
+    );
+    final int now = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+    int ok = 0;
+    String? lastError = downloadError;
+    for (final String path in files) {
+      try {
+        total += await _parseInto(
+          File(path),
+          db,
+          ins,
+          insChan,
+          now - 3 * 3600,
+          now + 48 * 3600,
+        );
+        ok++;
+      } on Exception catch (e) {
+        lastError = _explain(e);
+      }
+    }
+    ins.close();
+    insChan.close();
+    if (ok == 0) {
+      throw DownloadException(lastError ?? 'nenhuma fonte de guia disponível');
+    }
+    db.execute('CREATE INDEX idx_prog ON prog(channel, start)');
+    db.execute('CREATE INDEX idx_chan ON chan(nkey)');
+  } finally {
+    db.close();
+  }
+  final File dest = File(dbPath);
+  if (dest.existsSync()) dest.deleteSync();
+  tmp.renameSync(dbPath);
+  return total;
 }
 
 Future<int> _parseInto(

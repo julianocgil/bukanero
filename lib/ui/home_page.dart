@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
 
+import '../data/bandwidth.dart';
 import '../data/catalog_db.dart';
 import '../data/download.dart';
 import '../data/epg.dart';
@@ -22,6 +23,7 @@ import 'guide_page.dart';
 import 'item_views.dart';
 import 'perf_monitor.dart';
 import 'player_view.dart';
+import 'video_health.dart';
 import 'profile_dialog.dart';
 import 'series_dialog.dart';
 
@@ -36,6 +38,15 @@ class _HomePageState extends State<HomePage> {
   final Player _player = Player();
   late final VideoController _video = VideoController(_player);
   late final PerfMonitor _perf = PerfMonitor(_player);
+  // Mede a reserva do vídeo para os downloads darem a vez a ele.
+  late final VideoHealth _health = VideoHealth(_player);
+  // Downloads grandes (lista, notas, guia), um de cada vez.
+  final SerialJobs _jobs = SerialJobs();
+  // Muda a cada troca ou exclusão de perfil: cancela o que era do anterior.
+  int _gen = 0;
+  // Atualizações automáticas adiadas porque havia vídeo tocando.
+  final List<VoidCallback> _deferred = <VoidCallback>[];
+  StreamSubscription<bool>? _videoWatch;
 
   List<Profile> _profiles = <Profile>[];
   Profile? _profile;
@@ -96,6 +107,10 @@ class _HomePageState extends State<HomePage> {
   @override
   void initState() {
     super.initState();
+    _health; // começa a medir já
+    _videoWatch = VideoPriority.activeChanges.listen((bool active) {
+      if (!active) _runDeferred();
+    });
     _autoRefresh = Timer.periodic(
       const Duration(minutes: 10),
       (_) => _maybeAutoRefresh(),
@@ -119,6 +134,8 @@ class _HomePageState extends State<HomePage> {
   void dispose() {
     _debounce?.cancel();
     _autoRefresh?.cancel();
+    _videoWatch?.cancel();
+    _health.dispose();
     _searchCtl.dispose();
     _closeData();
     _listProgress.dispose();
@@ -140,7 +157,31 @@ class _HomePageState extends State<HomePage> {
 
   // ---- perfis e dados -----------------------------------------------------
 
+  /// Espera o vídeo ter reserva antes de cada pedaço; lança
+  /// [DownloadCancelled] se o perfil mudou desde [gen].
+  DownloadGate _gate(int gen) =>
+      () => VideoPriority.waitTurn(cancelled: () => !mounted || gen != _gen);
+
+  /// Com vídeo tocando, guarda [job] para quando ele parar.
+  bool _deferWhilePlaying(VoidCallback job) {
+    if (!VideoPriority.videoActive) return false;
+    _deferred.add(job);
+    return true;
+  }
+
+  void _runDeferred() {
+    if (!mounted) return;
+    final List<VoidCallback> jobs = List<VoidCallback>.of(_deferred);
+    _deferred.clear();
+    for (final VoidCallback j in jobs) {
+      j();
+    }
+    _maybeAutoRefresh();
+  }
+
   void _apply(Profile p, {required bool refresh}) {
+    _gen++;
+    _deferred.clear();
     saveLastProfileId(p.id);
     _player.stop();
     _closeData();
@@ -168,6 +209,8 @@ class _HomePageState extends State<HomePage> {
       if (refresh || !cache.existsSync()) {
         try {
           await _downloadList(p, cache);
+        } on DownloadCancelled {
+          rethrow;
         } on DownloadException catch (e) {
           // Sem lista nova, mas com a anterior guardada: segue com ela.
           if (!cache.existsSync()) rethrow;
@@ -206,6 +249,7 @@ class _HomePageState extends State<HomePage> {
       p.url.trim(),
       cache,
       allowInsecure: p.allowInsecure,
+      gate: _gate(_gen),
       onProgress: (int received, int? total) {
         // Atualiza o texto a cada 0,1 MB, não a cada pedaço recebido.
         final int step = received ~/ (100 * 1024);
@@ -223,6 +267,8 @@ class _HomePageState extends State<HomePage> {
   void _maybeAutoRefresh() {
     final Profile? p = _profile;
     if (!mounted || p == null || _db == null || _listBusy) return;
+    // Com vídeo tocando, espera: o timer e o fim do vídeo chamam de novo.
+    if (VideoPriority.videoActive) return;
     final String src = p.url.trim();
     if (!(src.startsWith('http://') || src.startsWith('https://'))) return;
     final DateTime now = DateTime.now();
@@ -247,9 +293,22 @@ class _HomePageState extends State<HomePage> {
     }
     final String src = p.url.trim();
     final bool remote = src.startsWith('http://') || src.startsWith('https://');
+    final int gen = _gen;
     setState(() => _listBusy = true);
+    _listProgress.value = 'Na fila...';
+    await _jobs.run(() => _doRefreshList(p, src, remote, gen, auto: auto));
+  }
+
+  Future<void> _doRefreshList(
+    Profile p,
+    String src,
+    bool remote,
+    int gen, {
+    required bool auto,
+  }) async {
     _listProgress.value = 'Conectando ao servidor...';
     try {
+      if (gen != _gen) throw const DownloadCancelled();
       String m3u = src;
       if (remote) {
         final File cache = playlistCacheFile(p);
@@ -265,6 +324,8 @@ class _HomePageState extends State<HomePage> {
       _autoFailedAt = null;
       _toast(auto ? 'Lista atualizada automaticamente.' : 'Lista atualizada.');
       unawaited(_refreshMeta(force: true));
+    } on DownloadCancelled {
+      // Perfil trocado ou apagado: nada a avisar.
     } on Object catch (e) {
       if (auto) _autoFailedAt = DateTime.now();
       _toast(
@@ -320,12 +381,24 @@ class _HomePageState extends State<HomePage> {
       return;
     }
 
+    if (!force && _deferWhilePlaying(() => _refreshEpg())) {
+      setState(() => _epgStatus = 'Guia: atualização adiada até o vídeo parar');
+      return;
+    }
+    final int gen = _gen;
     setState(() {
       _epgBusy = true;
       _epgStatus = 'Baixando o guia de programação...';
     });
     try {
-      final int n = await importEpg(urls, path, allowInsecure: p.allowInsecure);
+      final int n = await _jobs.run(
+        () => importEpg(
+          urls,
+          path,
+          allowInsecure: p.allowInsecure,
+          gate: _gate(gen),
+        ),
+      );
       final CatalogDb? cur = _db;
       if (!mounted || cur == null || _profile?.id != p.id) {
         _epgBusy = false;
@@ -339,6 +412,8 @@ class _HomePageState extends State<HomePage> {
         _epgBusy = false;
         _epgStatus = 'Guia: $n programas, $matched canais com programação';
       });
+    } on DownloadCancelled {
+      _epgBusy = false;
     } on Object catch (err) {
       if (!mounted) return;
       setState(() {
@@ -371,22 +446,35 @@ class _HomePageState extends State<HomePage> {
       );
       return;
     }
+    if (!force && _deferWhilePlaying(() => _refreshMeta())) return;
+    final int gen = _gen;
     setState(() => _metaBusy = true);
     try {
-      await importMetadata(api, path, allowInsecure: p.allowInsecure);
-      if (!mounted || _profile?.id != p.id) {
+      await _jobs.run(
+        () => importMetadata(
+          api,
+          path,
+          allowInsecure: p.allowInsecure,
+          gate: _gate(gen),
+        ),
+      );
+      // O catálogo pode ter sido trocado por uma atualização da lista.
+      final CatalogDb? cur = _db;
+      if (!mounted || cur == null || _profile?.id != p.id) {
         _metaBusy = false;
         return;
       }
-      db.attachMeta(path);
+      cur.attachMeta(path);
       _series?.attachMeta(path);
-      final (int, int) m = db.metaCoverage();
+      final (int, int) m = cur.metaCoverage();
       final (int, int) sr = _series?.metaCoverage() ?? (0, 0);
       setState(() => _metaBusy = false);
       _toast(
         'Notas carregadas: ${m.$2} de ${m.$1} filmes, '
         '${sr.$2} de ${sr.$1} séries.',
       );
+    } on DownloadCancelled {
+      _metaBusy = false;
     } on Object catch (e) {
       if (!mounted) return;
       setState(() => _metaBusy = false);
@@ -450,6 +538,8 @@ class _HomePageState extends State<HomePage> {
       ),
     );
     if (ok != true || !mounted) return;
+    _gen++; // cancela downloads deste perfil
+    _deferred.clear();
     await _player.stop();
     _closeData();
     deleteProfileData(cur);
