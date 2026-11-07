@@ -7,6 +7,7 @@ class Channel {
     this.logo,
     this.tvgId,
     this.tvgName,
+    this.rating,
   });
 
   final String name;
@@ -15,6 +16,9 @@ class Channel {
   final String? logo;
   final String? tvgId;
   final String? tvgName;
+
+  /// Nota vinda do servidor da lista (quando há), na escala dele.
+  final double? rating;
 
   @override
   String toString() => 'Channel($name, group: $group)';

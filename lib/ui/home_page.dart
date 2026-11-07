@@ -17,6 +17,7 @@ import '../domain/profile.dart';
 import '../domain/section.dart';
 import '../domain/series.dart';
 import '../domain/sort_mode.dart';
+import 'category_picker.dart';
 import 'guide_page.dart';
 import 'item_views.dart';
 import 'perf_monitor.dart';
@@ -61,11 +62,36 @@ class _HomePageState extends State<HomePage> {
   String? _playing;
   String? _playingUrl;
   bool _showHidden = false;
-  final Map<Section, SortMode> _sorts = <Section, SortMode>{
+  // Lista ampliada sobre o espaço do vídeo.
+  bool _wide = false;
+  // Ordem padrão até o usuário escolher a dele (guardada por perfil).
+  // Sem notas e datas carregadas, "recentes" cai para a ordem da lista.
+  static const Map<Section, SortMode> _defaultSorts = <Section, SortMode>{
     Section.live: SortMode.listOrder,
-    Section.movies: SortMode.listOrder,
-    Section.series: SortMode.nameAsc,
+    Section.movies: SortMode.recent,
+    Section.series: SortMode.recent,
   };
+  final Map<Section, SortMode> _sorts = Map<Section, SortMode>.of(
+    _defaultSorts,
+  );
+
+  static String _sortPrefKey(Section s) => 'sort.${s.name}';
+
+  void _loadSorts(UserData user) {
+    _sorts
+      ..clear()
+      ..addAll(_defaultSorts);
+    for (final Section s in Section.values) {
+      final SortMode? m = SortMode.values
+          .asNameMap()[user.pref(_sortPrefKey(s))];
+      if (m != null) _sorts[s] = m;
+    }
+  }
+
+  void _setSort(SortMode m) {
+    setState(() => _sorts[_section] = m);
+    _user?.setPref(_sortPrefKey(_section), m.name);
+  }
 
   @override
   void initState() {
@@ -159,6 +185,7 @@ class _HomePageState extends State<HomePage> {
     _closeData();
     _db = db;
     _user = UserData.open(userDataPath(p));
+    _loadSorts(_user!);
     _series = SeriesDb.open(seriesDbPath(p));
     final String metaPath = metaDbPath(p);
     db.attachMeta(metaPath);
@@ -470,13 +497,19 @@ class _HomePageState extends State<HomePage> {
   Future<void> _openSeries(Channel c) async {
     final SeriesDb? sdb = _series;
     if (sdb == null) return;
+    final String lastKey = 'last.${c.name}';
     final Channel? ep = await showSeriesDialog(
       context,
       title: c.name,
       cover: c.logo,
       episodes: sdb.episodes(c.name),
+      lastUrl: _user?.pref(lastKey),
     );
-    if (ep != null && mounted) _play(ep);
+    if (ep == null || !mounted) return;
+    // A série vai para os recentes e guarda o episódio, para continuar.
+    _user?.addRecent(Section.series, c);
+    _user?.setPref(lastKey, ep.url);
+    _play(ep);
   }
 
   Future<void> _openGuide() async {
@@ -508,8 +541,59 @@ class _HomePageState extends State<HomePage> {
     if (_section == Section.series && c.url.startsWith(seriesUrlPrefix)) {
       unawaited(_openSeries(c));
     } else {
+      if (_section != Section.live) _user?.addRecent(_section, c);
       _play(c);
     }
+  }
+
+  void _removeRecent(Channel c) {
+    _user?.removeRecent(_section, c.url);
+    setState(() {});
+  }
+
+  /// Faixa "Continuar assistindo" no topo de filmes e séries.
+  Widget _recentRow(List<Channel> recent) {
+    final ThemeData t = Theme.of(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        Padding(
+          padding: const EdgeInsets.fromLTRB(4, 4, 4, 6),
+          child: Row(
+            children: <Widget>[
+              Icon(Icons.history, size: 18, color: t.colorScheme.primary),
+              const SizedBox(width: 6),
+              Text('Continuar assistindo', style: t.textTheme.titleSmall),
+            ],
+          ),
+        ),
+        SizedBox(
+          height: 200,
+          child: ListView.separated(
+            scrollDirection: Axis.horizontal,
+            itemCount: recent.length,
+            separatorBuilder: (BuildContext context, int i) =>
+                const SizedBox(width: 8),
+            itemBuilder: (BuildContext context, int i) {
+              final Channel c = recent[i];
+              return SizedBox(
+                width: 116,
+                child: PosterCard(
+                  key: ValueKey<String>('recent:${c.url}'),
+                  channel: c,
+                  selected: c.url == _playingUrl,
+                  hidden: false,
+                  onTap: () => _onItemTap(c),
+                  onToggleHidden: () {},
+                  onRemove: () => _removeRecent(c),
+                ),
+              );
+            },
+          ),
+        ),
+        const Divider(height: 20),
+      ],
+    );
   }
 
   void _play(Channel c) {
@@ -624,25 +708,6 @@ class _HomePageState extends State<HomePage> {
                 : 'Atualizar a lista (em segundo plano)',
             icon: const Icon(Icons.refresh),
             onPressed: (cur == null || _listBusy) ? null : _refreshList,
-          ),
-          PopupMenuButton<SortMode>(
-            tooltip: 'Ordenar',
-            icon: const Icon(Icons.sort),
-            onSelected: (SortMode m) => setState(() => _sorts[_section] = m),
-            itemBuilder: (BuildContext context) => <PopupMenuEntry<SortMode>>[
-              for (final SortMode m in SortMode.values)
-                if (!m.needsMeta || _section != Section.live)
-                  CheckedPopupMenuItem<SortMode>(
-                    value: m,
-                    enabled: !m.needsMeta || _hasMeta,
-                    checked: _sorts[_section] == m,
-                    child: Text(
-                      (m.needsMeta && !_hasMeta)
-                          ? '${m.label} (${_metaBusy ? 'carregando...' : 'indisponível'})'
-                          : m.label,
-                    ),
-                  ),
-            ],
           ),
           PopupMenuButton<String>(
             tooltip: 'Perfis',
@@ -790,116 +855,271 @@ class _HomePageState extends State<HomePage> {
       }
     }
 
-    return Row(
-      children: <Widget>[
-        SizedBox(width: 260, child: _groupColumn(groups, counts, hiddenGroups)),
-        const VerticalDivider(width: 1),
-        SizedBox(
-          width: _section == Section.live ? 380 : 520,
-          child: _itemColumn(items, hiddenItems),
-        ),
-        const VerticalDivider(width: 1),
-        Expanded(
-          child: Stack(
-            children: <Widget>[
-              Positioned.fill(child: PlayerView(controller: _video)),
-              if (_perf.running)
-                Positioned(top: 8, left: 8, child: PerfOverlay(monitor: _perf)),
-            ],
-          ),
-        ),
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints box) {
+        // Normal: grade e vídeo lado a lado. Ampliada: a grade toma o lugar
+        // do vídeo, que continua tocando numa coluna estreita.
+        final double normal = _section == Section.live ? 440 : 640;
+        final double width = _wide
+            ? (box.maxWidth - _miniVideoWidth).clamp(normal, box.maxWidth)
+            : normal;
+        return Row(
+          children: <Widget>[
+            AnimatedContainer(
+              duration: const Duration(milliseconds: 220),
+              curve: Curves.easeOut,
+              width: width,
+              child: _itemColumn(
+                items,
+                hiddenItems,
+                groups: groups,
+                counts: counts,
+              ),
+            ),
+            const VerticalDivider(width: 1),
+            Expanded(
+              child: Stack(
+                children: <Widget>[
+                  Positioned.fill(child: PlayerView(controller: _video)),
+                  if (_perf.running)
+                    Positioned(
+                      top: 8,
+                      left: 8,
+                      child: PerfOverlay(monitor: _perf),
+                    ),
+                ],
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  static const double _miniVideoWidth = 360;
+
+  static const Map<Section, String> _sectionNames = <Section, String>{
+    Section.live: 'Canais ao vivo',
+    Section.movies: 'Filmes',
+    Section.series: 'Séries',
+  };
+
+  Future<void> _pickCategory(
+    List<String> groups,
+    Map<String, int> counts,
+  ) async {
+    final UserData? user = _user;
+    if (user == null) return;
+    bool isHidden(String g) => user.hiddenGroups(_section).contains(g);
+    final CategoryChoice? c = await showCategoryPicker(
+      context,
+      title: 'Categorias · ${_sectionNames[_section]}',
+      groups: groups,
+      counts: counts,
+      selected: _group,
+      isHidden: isHidden,
+      onToggleHidden: (String g) => _toggleGroup(g, isHidden(g)),
+    );
+    if (c == null || !mounted) return;
+    setState(() {
+      _group = c.group;
+      _setQuery('');
+    });
+  }
+
+  /// Nome da ordem na seção atual ("recentes" quer dizer coisas diferentes
+  /// em filmes e séries).
+  String _sortLabel(SortMode m) => switch ((m, _section)) {
+    (SortMode.recent, Section.series) =>
+      'Adicionadas ou atualizadas recentemente',
+    (SortMode.recent, _) => 'Adicionados recentemente',
+    _ => m.label,
+  };
+
+  Widget _sortMenu() {
+    final ThemeData t = Theme.of(context);
+    final SortMode cur = _sorts[_section] ?? SortMode.listOrder;
+    return PopupMenuButton<SortMode>(
+      tooltip: 'Ordenar: ${_sortLabel(cur)}',
+      icon: const Icon(Icons.sort),
+      style: IconButton.styleFrom(
+        backgroundColor: t.colorScheme.secondaryContainer,
+        foregroundColor: t.colorScheme.onSecondaryContainer,
+      ),
+      onSelected: _setSort,
+      itemBuilder: (BuildContext context) => <PopupMenuEntry<SortMode>>[
+        for (final SortMode m in SortMode.values)
+          if (!m.needsMeta || _section != Section.live)
+            CheckedPopupMenuItem<SortMode>(
+              value: m,
+              enabled: !m.needsMeta || _hasMeta,
+              checked: cur == m,
+              child: Text(
+                (m.needsMeta && !_hasMeta)
+                    ? '${_sortLabel(m)} (${_metaBusy ? 'carregando...' : 'indisponível'})'
+                    : _sortLabel(m),
+              ),
+            ),
       ],
     );
   }
 
-  Widget _groupColumn(
-    List<String> groups,
-    Map<String, int> counts,
-    Set<String> hiddenGroups,
-  ) {
+  Widget _sectionPicker() {
+    return SegmentedButton<Section>(
+      showSelectedIcon: false,
+      segments: const <ButtonSegment<Section>>[
+        ButtonSegment<Section>(
+          value: Section.live,
+          icon: Icon(Icons.live_tv),
+          tooltip: 'Ao vivo',
+        ),
+        ButtonSegment<Section>(
+          value: Section.movies,
+          icon: Icon(Icons.movie_outlined),
+          tooltip: 'Filmes',
+        ),
+        ButtonSegment<Section>(
+          value: Section.series,
+          icon: Icon(Icons.video_library_outlined),
+          tooltip: 'Séries',
+        ),
+      ],
+      selected: <Section>{_section},
+      onSelectionChanged: (Set<Section> s) => setState(() {
+        _section = s.first;
+        _group = null;
+        _setQuery('');
+      }),
+    );
+  }
+
+  Widget _itemColumn(
+    List<Channel> items,
+    Set<String> hiddenItems, {
+    required List<String> groups,
+    required Map<String, int> counts,
+  }) {
     final ThemeData t = Theme.of(context);
+    final bool live = _section == Section.live;
+    final int now = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+    Widget liveTile(BuildContext context, int i) {
+      final Channel c = items[i];
+      final bool hidden = _isHidden(c, hiddenItems);
+      return LiveTile(
+        key: ValueKey<String>(c.url),
+        channel: c,
+        selected: c.url == _playingUrl,
+        hidden: hidden,
+        nowSecs: now,
+        current: _epg?.nowNext(c.tvgId, now, name: c.name).$1,
+        onTap: () => _play(c),
+        onToggleHidden: () => _toggleItem(c, hidden),
+      );
+    }
+
+    Widget body;
+    if (items.isEmpty) {
+      body = const Center(child: Text('Nada por aqui'));
+    } else if (live && !_wide) {
+      body = ListView.builder(itemCount: items.length, itemBuilder: liveTile);
+    } else if (live) {
+      // Ampliada: canais em colunas.
+      body = GridView.builder(
+        padding: const EdgeInsets.symmetric(horizontal: 4),
+        gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+          maxCrossAxisExtent: 420,
+          mainAxisExtent: 84,
+        ),
+        itemCount: items.length,
+        itemBuilder: liveTile,
+      );
+    } else {
+      final List<Channel> recent = _query.isEmpty
+          ? (_user?.recent(_section) ?? const <Channel>[])
+          : const <Channel>[];
+      body = CustomScrollView(
+        slivers: <Widget>[
+          if (recent.isNotEmpty)
+            SliverPadding(
+              padding: const EdgeInsets.fromLTRB(8, 4, 8, 0),
+              sliver: SliverToBoxAdapter(child: _recentRow(recent)),
+            ),
+          SliverPadding(
+            padding: const EdgeInsets.all(8),
+            sliver: SliverGrid.builder(
+              gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+                maxCrossAxisExtent: 150,
+                childAspectRatio: 0.58,
+                mainAxisSpacing: 8,
+                crossAxisSpacing: 8,
+              ),
+              itemCount: items.length,
+              itemBuilder: (BuildContext context, int i) {
+                final Channel c = items[i];
+                final bool hidden = _isHidden(c, hiddenItems);
+                return PosterCard(
+                  key: ValueKey<String>(c.url),
+                  channel: c,
+                  selected: c.url == _playingUrl,
+                  hidden: hidden,
+                  onTap: () => _onItemTap(c),
+                  onToggleHidden: () => _toggleItem(c, hidden),
+                );
+              },
+            ),
+          ),
+        ],
+      );
+    }
+
+    final String? group = _group;
     return Column(
       children: <Widget>[
         Padding(
-          padding: const EdgeInsets.all(8),
-          child: SegmentedButton<Section>(
-            showSelectedIcon: false,
-            segments: const <ButtonSegment<Section>>[
-              ButtonSegment<Section>(
-                value: Section.live,
-                icon: Icon(Icons.live_tv),
-                tooltip: 'Ao vivo',
+          padding: const EdgeInsets.fromLTRB(8, 8, 8, 0),
+          child: Row(
+            children: <Widget>[
+              _sectionPicker(),
+              const SizedBox(width: 8),
+              Expanded(
+                child: CategoryButton(
+                  label: group ?? 'Todas as categorias',
+                  count: group == null
+                      ? counts.values.fold<int>(0, (int a, int b) => a + b)
+                      : counts[group],
+                  onPressed: () => _pickCategory(groups, counts),
+                ),
               ),
-              ButtonSegment<Section>(
-                value: Section.movies,
-                icon: Icon(Icons.movie_outlined),
-                tooltip: 'Filmes',
-              ),
-              ButtonSegment<Section>(
-                value: Section.series,
-                icon: Icon(Icons.video_library_outlined),
-                tooltip: 'Séries',
+              const SizedBox(width: 4),
+              _sortMenu(),
+              const SizedBox(width: 4),
+              IconButton.filledTonal(
+                tooltip: _wide
+                    ? 'Reduzir a lista (vídeo grande)'
+                    : 'Ampliar a lista (vídeo pequeno)',
+                icon: Icon(_wide ? Icons.close_fullscreen : Icons.open_in_full),
+                onPressed: () => setState(() => _wide = !_wide),
               ),
             ],
-            selected: <Section>{_section},
-            onSelectionChanged: (Set<Section> s) => setState(() {
-              _section = s.first;
-              _group = null;
-              _setQuery('');
-            }),
           ),
         ),
-        ListTile(
-          dense: true,
-          leading: const Icon(Icons.apps, size: 18),
-          title: const Text('Todas as categorias'),
-          selected: _group == null,
-          onTap: () => setState(() {
-            _group = null;
-            _setQuery('');
-          }),
-        ),
-        Expanded(
-          child: ListView.builder(
-            itemCount: groups.length,
-            itemBuilder: (BuildContext context, int i) {
-              final String g = groups[i];
-              final bool hidden = hiddenGroups.contains(g);
-              return ListTile(
-                dense: true,
-                selected: g == _group,
-                title: Text(
-                  g,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: hidden
-                      ? TextStyle(
-                          decoration: TextDecoration.lineThrough,
-                          color: t.disabledColor,
-                        )
-                      : null,
-                ),
-                trailing: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: <Widget>[
-                    Text('${counts[g]}'),
-                    HideMenu(
-                      hidden: hidden,
-                      onToggle: () => _toggleGroup(g, hidden),
-                    ),
-                  ],
-                ),
-                onTap: () => setState(() {
-                  _group = g;
-                  _setQuery('');
-                }),
-              );
-            },
+        Padding(
+          padding: const EdgeInsets.all(8),
+          child: TextField(
+            controller: _searchCtl,
+            decoration: const InputDecoration(
+              prefixIcon: Icon(Icons.search),
+              hintText: 'Buscar pelo nome',
+              isDense: true,
+              border: OutlineInputBorder(),
+            ),
+            onChanged: _onQuery,
           ),
         ),
-        if (_epgStatus != null)
+        Expanded(child: body),
+        if (_epgStatus != null && live)
           Padding(
-            padding: const EdgeInsets.all(8),
+            padding: const EdgeInsets.fromLTRB(12, 4, 12, 8),
             child: Row(
               children: <Widget>[
                 if (_epgBusy) ...<Widget>[
@@ -916,75 +1136,6 @@ class _HomePageState extends State<HomePage> {
               ],
             ),
           ),
-      ],
-    );
-  }
-
-  Widget _itemColumn(List<Channel> items, Set<String> hiddenItems) {
-    final bool live = _section == Section.live;
-    final int now = DateTime.now().millisecondsSinceEpoch ~/ 1000;
-    Widget body;
-    if (items.isEmpty) {
-      body = const Center(child: Text('Nada por aqui'));
-    } else if (live) {
-      body = ListView.builder(
-        itemCount: items.length,
-        itemBuilder: (BuildContext context, int i) {
-          final Channel c = items[i];
-          final bool hidden = _isHidden(c, hiddenItems);
-          return LiveTile(
-            key: ValueKey<String>(c.url),
-            channel: c,
-            selected: c.url == _playingUrl,
-            hidden: hidden,
-            nowSecs: now,
-            current: _epg?.nowNext(c.tvgId, now, name: c.name).$1,
-            onTap: () => _play(c),
-            onToggleHidden: () => _toggleItem(c, hidden),
-          );
-        },
-      );
-    } else {
-      body = GridView.builder(
-        padding: const EdgeInsets.all(8),
-        gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-          maxCrossAxisExtent: 150,
-          childAspectRatio: 0.58,
-          mainAxisSpacing: 8,
-          crossAxisSpacing: 8,
-        ),
-        itemCount: items.length,
-        itemBuilder: (BuildContext context, int i) {
-          final Channel c = items[i];
-          final bool hidden = _isHidden(c, hiddenItems);
-          return PosterCard(
-            key: ValueKey<String>(c.url),
-            channel: c,
-            selected: c.url == _playingUrl,
-            hidden: hidden,
-            onTap: () => _onItemTap(c),
-            onToggleHidden: () => _toggleItem(c, hidden),
-          );
-        },
-      );
-    }
-
-    return Column(
-      children: <Widget>[
-        Padding(
-          padding: const EdgeInsets.all(8),
-          child: TextField(
-            controller: _searchCtl,
-            decoration: const InputDecoration(
-              prefixIcon: Icon(Icons.search),
-              hintText: 'Buscar pelo nome',
-              isDense: true,
-              border: OutlineInputBorder(),
-            ),
-            onChanged: _onQuery,
-          ),
-        ),
-        Expanded(child: body),
       ],
     );
   }

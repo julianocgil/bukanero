@@ -144,6 +144,7 @@ class PosterCard extends StatelessWidget {
     required this.hidden,
     required this.onTap,
     required this.onToggleHidden,
+    this.onRemove,
     super.key,
   });
 
@@ -152,6 +153,13 @@ class PosterCard extends StatelessWidget {
   final bool hidden;
   final VoidCallback onTap;
   final VoidCallback onToggleHidden;
+
+  /// Com ele, o canto mostra um X (tirar dos recentes) no lugar do menu.
+  final VoidCallback? onRemove;
+
+  static String _fmtRating(double r) =>
+      (r == r.roundToDouble() ? r.toStringAsFixed(0) : r.toStringAsFixed(1))
+          .replaceAll('.', ',');
 
   @override
   Widget build(BuildContext context) {
@@ -177,6 +185,40 @@ class PosterCard extends StatelessWidget {
                   fit: StackFit.expand,
                   children: <Widget>[
                     CoverImage(url: channel.logo, icon: Icons.movie_outlined),
+                    if (channel.rating != null)
+                      Positioned(
+                        top: 4,
+                        left: 4,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 6,
+                            vertical: 2,
+                          ),
+                          decoration: BoxDecoration(
+                            color: Colors.black.withValues(alpha: 0.7),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: <Widget>[
+                              const Icon(
+                                Icons.star_rounded,
+                                size: 14,
+                                color: Color(0xFFFFC107),
+                              ),
+                              const SizedBox(width: 2),
+                              Text(
+                                _fmtRating(channel.rating!),
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
                     Positioned(
                       top: 0,
                       right: 0,
@@ -187,10 +229,19 @@ class PosterCard extends StatelessWidget {
                             bottomLeft: Radius.circular(10),
                           ),
                         ),
-                        child: HideMenu(
-                          hidden: hidden,
-                          onToggle: onToggleHidden,
-                        ),
+                        child: onRemove != null
+                            ? IconButton(
+                                tooltip: 'Tirar dos recentes',
+                                iconSize: 18,
+                                visualDensity: VisualDensity.compact,
+                                color: Colors.white,
+                                icon: const Icon(Icons.close),
+                                onPressed: onRemove,
+                              )
+                            : HideMenu(
+                                hidden: hidden,
+                                onToggle: onToggleHidden,
+                              ),
                       ),
                     ),
                   ],

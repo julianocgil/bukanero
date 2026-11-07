@@ -12,11 +12,16 @@ Future<Channel?> showSeriesDialog(
   required String title,
   required String? cover,
   required List<Episode> episodes,
+  String? lastUrl,
 }) {
   return showDialog<Channel>(
     context: context,
-    builder: (BuildContext ctx) =>
-        _SeriesDialog(title: title, cover: cover, episodes: episodes),
+    builder: (BuildContext ctx) => _SeriesDialog(
+      title: title,
+      cover: cover,
+      episodes: episodes,
+      lastUrl: lastUrl,
+    ),
   );
 }
 
@@ -25,11 +30,15 @@ class _SeriesDialog extends StatefulWidget {
     required this.title,
     required this.cover,
     required this.episodes,
+    this.lastUrl,
   });
 
   final String title;
   final String? cover;
   final List<Episode> episodes;
+
+  /// Último episódio assistido: abre na temporada dele e fica destacado.
+  final String? lastUrl;
 
   @override
   State<_SeriesDialog> createState() => _SeriesDialogState();
@@ -37,7 +46,14 @@ class _SeriesDialog extends StatefulWidget {
 
 class _SeriesDialogState extends State<_SeriesDialog> {
   late final Map<int, List<Episode>> _seasons = _group();
-  late int _season = _seasons.isEmpty ? 0 : _seasons.keys.first;
+  late int _season = _initialSeason();
+
+  int _initialSeason() {
+    for (final Episode e in widget.episodes) {
+      if (e.url == widget.lastUrl) return e.season;
+    }
+    return _seasons.isEmpty ? 0 : _seasons.keys.first;
+  }
 
   Map<int, List<Episode>> _group() {
     final Map<int, List<Episode>> m = <int, List<Episode>>{};
@@ -118,8 +134,13 @@ class _SeriesDialogState extends State<_SeriesDialog> {
                         itemCount: list.length,
                         itemBuilder: (BuildContext context, int i) {
                           final Episode e = list[i];
+                          final bool last = e.url == widget.lastUrl;
                           return ListTile(
                             dense: true,
+                            selected: last,
+                            subtitle: last
+                                ? const Text('Último que você assistiu')
+                                : null,
                             leading: SizedBox(
                               width: 44,
                               child: Text(

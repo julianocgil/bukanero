@@ -178,8 +178,13 @@ class CatalogDb {
   // Sem notas disponíveis, volta para a ordem da lista.
   SortMode get _eff => (sort.needsMeta && !_metaOn) ? SortMode.listOrder : sort;
 
-  String get _join =>
-      _eff.needsMeta ? 'LEFT JOIN mx.vod m ON m.vod_id = i.sid' : '';
+  String get _join => _metaOn ? 'LEFT JOIN mx.vod m ON m.vod_id = i.sid' : '';
+
+  // Só filmes têm nota: o id de um canal ao vivo pode coincidir com o de um
+  // filme.
+  String get _rating => _metaOn
+      ? 'CASE WHEN i.section = ${Section.movies.index} THEN m.rating END'
+      : 'NULL';
 
   /// (filmes no total, filmes com nota), para conferir se a ligação funcionou.
   (int, int) metaCoverage() {
@@ -220,7 +225,7 @@ class CatalogDb {
   }) {
     final ResultSet rs = _db.select(
       'SELECT i.name AS name, i.url AS url, i.logo AS logo, '
-      'i.tvg_id AS tvg_id FROM items i $_join '
+      'i.tvg_id AS tvg_id, $_rating AS rating FROM items i $_join '
       'WHERE i.section = ? AND i.grp = ? AND i.name LIKE ? ESCAPE ? '
       'ORDER BY ${_orderBy(_eff)} LIMIT ?',
       <Object?>[
@@ -242,6 +247,7 @@ class CatalogDb {
           group: group,
           logo: r['logo'] as String?,
           tvgId: r['tvg_id'] as String?,
+          rating: (r['rating'] as num?)?.toDouble(),
         ),
       );
       if (out.length >= limit) break;
@@ -264,7 +270,7 @@ class CatalogDb {
     while (out.length < limit) {
       final ResultSet rs = _db.select(
         'SELECT i.grp AS grp, i.name AS name, i.url AS url, i.logo AS logo, '
-        'i.tvg_id AS tvg_id FROM items i $_join '
+        'i.tvg_id AS tvg_id, $_rating AS rating FROM items i $_join '
         'WHERE i.section = ? AND i.name LIKE ? ESCAPE ? '
         'ORDER BY ${_orderBy(_eff)} LIMIT ? OFFSET ?',
         <Object?>[s.index, like, r'\', batch, offset],
@@ -280,6 +286,7 @@ class CatalogDb {
             group: group,
             logo: r['logo'] as String?,
             tvgId: r['tvg_id'] as String?,
+            rating: (r['rating'] as num?)?.toDouble(),
           ),
         );
         if (out.length >= limit) break;

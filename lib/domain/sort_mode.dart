@@ -4,7 +4,7 @@ enum SortMode {
   listOrderReverse('Ordem da lista (invertida)', false),
   nameAsc('A → Z', false),
   nameDesc('Z → A', false),
-  recent('Mais recentes', true),
+  recent('Adicionados recentemente', true),
   rating('Melhor nota', true),
   year('Ano (mais novo)', true);
 

@@ -217,9 +217,9 @@ class SeriesDb {
 
   SortMode get _eff => (sort.needsMeta && !_metaOn) ? SortMode.listOrder : sort;
 
-  String get _join => (_eff.needsMeta || _coverOn)
-      ? 'LEFT JOIN mx.series m ON m.mkey = s.mkey'
-      : '';
+  String get _join => _metaOn ? 'LEFT JOIN mx.series m ON m.mkey = s.mkey' : '';
+
+  String get _rating => _metaOn ? 'm.rating' : 'NULL';
 
   /// Capa: o pôster da série vindo do servidor; sem ele, a imagem do
   /// primeiro episódio que tem imagem.
@@ -255,6 +255,7 @@ class SeriesDb {
       url: n == 1 ? r['url'] as String : '$seriesUrlPrefix$title',
       group: group,
       logo: r['logo'] as String?,
+      rating: (r['rating'] as num?)?.toDouble(),
     );
   }
 
@@ -267,7 +268,7 @@ class SeriesDb {
   }) {
     final ResultSet rs = _db.select(
       'SELECT s.title AS title, $_logo AS logo, s.url AS url, '
-      's.episodes AS n FROM series s $_join '
+      's.episodes AS n, $_rating AS rating FROM series s $_join '
       'WHERE s.grp = ? AND s.title LIKE ? ESCAPE ? '
       'ORDER BY ${_orderInGroup(_eff)} LIMIT ?',
       <Object?>[group, '%${_escapeLike(query)}%', r'\', limit + exclude.length],
@@ -295,7 +296,8 @@ class SeriesDb {
     while (out.length < limit) {
       final ResultSet rs = _db.select(
         'SELECT s.title AS title, s.grp AS grp, $_logo AS logo, '
-        's.url AS url, SUM(s.episodes) AS n, MIN(s.pos) AS firstpos '
+        's.url AS url, SUM(s.episodes) AS n, MIN(s.pos) AS firstpos, '
+        '$_rating AS rating '
         'FROM series s $_join WHERE s.title LIKE ? ESCAPE ? '
         'GROUP BY s.title ORDER BY ${_orderGlobal(_eff)} LIMIT ? OFFSET ?',
         <Object?>[like, r'\', batch, offset],

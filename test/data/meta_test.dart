@@ -96,6 +96,16 @@ http://s/movie/u/p/104.mp4
     db.sort = SortMode.year;
     expect(items(), <String>['Novo', 'Bom', 'Antigo', 'Sem Dados']);
     expect(db.metaCoverage(), (4, 3));
+    // A nota chega até o cartão, em qualquer ordem.
+    db.sort = SortMode.nameAsc;
+    expect(
+      <String, double?>{
+        for (final Channel c in db.items(Section.movies, 'Filmes | A', ''))
+          c.name: c.rating,
+      },
+      <String, double?>{'Antigo': 5, 'Bom': 9, 'Novo': 6.5, 'Sem Dados': null},
+    );
+    db.sort = SortMode.recent;
     expect(_names(db.search(Section.movies, '')), <String>[
       'Novo',
       'Bom',
@@ -206,6 +216,7 @@ http://s/series/u/p/4.mp4
       'Beta': 'http://s/ep/beta1.jpg',
     });
     expect(logos(db.search(''))['Alfa'], 'http://s/poster/alfa.jpg');
+    expect(db.list('Series | A', '').first.rating, isNull);
     // As imagens dos episódios continuam as próprias.
     expect(db.episodes('Alfa').map((Episode e) => e.logo), <String>[
       'http://s/ep/alfa1.jpg',
