@@ -6,15 +6,31 @@ import 'package:sqlite3/sqlite3.dart';
 
 import '../domain/channel.dart';
 import '../domain/section.dart';
+import '../domain/sort_mode.dart';
+import '../domain/stream_id.dart';
 import 'epg.dart';
 import 'm3u/m3u_parser.dart';
 
-const int _schemaVersion = 3;
+const int _schemaVersion = 5;
 
 String _stamp(String path) {
   final FileStat s = File(path).statSync();
   return '$_schemaVersion:${s.size}:${s.modified.millisecondsSinceEpoch}';
 }
+
+String _escapeLike(String q) =>
+    q.replaceAll(r'\', r'\\').replaceAll('%', r'\%').replaceAll('_', r'\_');
+
+/// Ordem de itens. `i` = tabela de itens, `m` = notas/datas (se ligadas).
+String _orderBy(SortMode m) => switch (m) {
+  SortMode.listOrder => 'i.id',
+  SortMode.listOrderReverse => 'i.id DESC',
+  SortMode.nameAsc => 'i.nkey, i.id',
+  SortMode.nameDesc => 'i.nkey DESC, i.id',
+  SortMode.recent => 'COALESCE(m.added, 0) DESC, i.id',
+  SortMode.rating => 'COALESCE(m.rating, -1) DESC, i.id',
+  SortMode.year => 'COALESCE(m.year, 0) DESC, i.id',
+};
 
 /// True se o banco existe e foi gerado a partir deste mesmo arquivo M3U.
 bool catalogIsFresh(String dbPath, String m3uPath) {
@@ -62,15 +78,17 @@ Future<void> importCatalog(String m3uPath, String dbPath) {
           section INTEGER NOT NULL,
           grp TEXT NOT NULL,
           name TEXT NOT NULL,
+          nkey TEXT NOT NULL,
           url TEXT NOT NULL,
           logo TEXT,
-          tvg_id TEXT
+          tvg_id TEXT,
+          sid INTEGER
         );
         CREATE TABLE meta(key TEXT PRIMARY KEY, value TEXT);
       ''');
       final PreparedStatement ins = db.prepare(
-        'INSERT INTO items(section, grp, name, url, logo, tvg_id) '
-        'VALUES (?, ?, ?, ?, ?, ?)',
+        'INSERT INTO items(section, grp, name, nkey, url, logo, tvg_id, sid) '
+        'VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
       );
       final Stream<String> lines = File(m3uPath)
           .openRead()
@@ -84,9 +102,11 @@ Future<void> importCatalog(String m3uPath, String dbPath) {
           classify(c).index,
           c.group ?? '(sem grupo)',
           c.name,
+          normalize(c.name),
           c.url,
           c.logo,
           c.tvgId,
+          streamIdFromUrl(c.url),
         ]);
         if (++n % 20000 == 0) {
           db.execute('COMMIT');
@@ -97,6 +117,7 @@ Future<void> importCatalog(String m3uPath, String dbPath) {
       ins.close();
 
       db.execute('CREATE INDEX idx_items_group ON items(section, grp)');
+      db.execute('CREATE INDEX idx_items_nkey ON items(section, grp, nkey)');
       db.execute('INSERT INTO meta(key, value) VALUES (?, ?)', <Object?>[
         'stamp',
         _stamp(m3uPath),
@@ -122,6 +143,61 @@ class CatalogDb {
       CatalogDb._(sqlite3.open(path, mode: OpenMode.readOnly));
 
   final Database _db;
+  bool _metaOn = false;
+
+  /// Ordem usada por [items] e [search].
+  SortMode sort = SortMode.listOrder;
+
+  /// True se o banco de notas e datas está ligado.
+  bool get hasMeta => _metaOn;
+
+  /// Liga o banco de notas e datas (nome interno `mx`). Refaça após uma
+  /// nova importação, porque o arquivo antigo foi substituído.
+  bool attachMeta(String path) {
+    detachMeta();
+    if (!File(path).existsSync()) return false;
+    try {
+      _db.execute('ATTACH DATABASE ? AS mx', <Object?>[path]);
+      _metaOn = true;
+    } on Object {
+      _metaOn = false;
+    }
+    return _metaOn;
+  }
+
+  void detachMeta() {
+    if (!_metaOn) return;
+    try {
+      _db.execute('DETACH DATABASE mx');
+    } on Object {
+      // Nada a fazer: segue sem as notas.
+    }
+    _metaOn = false;
+  }
+
+  // Sem notas disponíveis, volta para a ordem da lista.
+  SortMode get _eff => (sort.needsMeta && !_metaOn) ? SortMode.listOrder : sort;
+
+  String get _join =>
+      _eff.needsMeta ? 'LEFT JOIN mx.vod m ON m.vod_id = i.sid' : '';
+
+  /// (filmes no total, filmes com nota), para conferir se a ligação funcionou.
+  (int, int) metaCoverage() {
+    if (!_metaOn) return (0, 0);
+    final ResultSet rs = _db.select(
+      'SELECT COUNT(*) AS total, COUNT(m.rating) AS rated '
+      'FROM items i LEFT JOIN mx.vod m ON m.vod_id = i.sid '
+      'WHERE i.section = ?',
+      <Object?>[Section.movies.index],
+    );
+    return (rs.first['total'] as int, rs.first['rated'] as int);
+  }
+
+  /// Uma URL qualquer da lista (para descobrir servidor e credenciais).
+  String? sampleItemUrl() {
+    final ResultSet rs = _db.select('SELECT url FROM items LIMIT 1');
+    return rs.isEmpty ? null : rs.first['url'] as String;
+  }
 
   Map<String, int> groupCounts(Section s) {
     final ResultSet rs = _db.select(
@@ -142,15 +218,18 @@ class CatalogDb {
     Set<String> exclude = const <String>{},
     int limit = 2000,
   }) {
-    final String esc = query
-        .replaceAll(r'\', r'\\')
-        .replaceAll('%', r'\%')
-        .replaceAll('_', r'\_');
     final ResultSet rs = _db.select(
-      r'SELECT name, url, logo, tvg_id FROM items '
-      r'WHERE section = ? AND grp = ? AND name LIKE ? ESCAPE ? '
-      r'ORDER BY id LIMIT ?',
-      <Object?>[s.index, group, '%$esc%', r'\', limit + exclude.length],
+      'SELECT i.name AS name, i.url AS url, i.logo AS logo, '
+      'i.tvg_id AS tvg_id FROM items i $_join '
+      'WHERE i.section = ? AND i.grp = ? AND i.name LIKE ? ESCAPE ? '
+      'ORDER BY ${_orderBy(_eff)} LIMIT ?',
+      <Object?>[
+        s.index,
+        group,
+        '%${_escapeLike(query)}%',
+        r'\',
+        limit + exclude.length,
+      ],
     );
     final List<Channel> out = <Channel>[];
     for (final Row r in rs) {
@@ -166,6 +245,47 @@ class CatalogDb {
         ),
       );
       if (out.length >= limit) break;
+    }
+    return out;
+  }
+
+  /// Busca pelo nome em todas as categorias de uma seção (máx. [limit]).
+  /// [isHidden] recebe (categoria, nome) e decide se o item fica de fora.
+  List<Channel> search(
+    Section s,
+    String query, {
+    bool Function(String group, String name)? isHidden,
+    int limit = 500,
+  }) {
+    const int batch = 2000;
+    final String like = '%${_escapeLike(query)}%';
+    final List<Channel> out = <Channel>[];
+    int offset = 0;
+    while (out.length < limit) {
+      final ResultSet rs = _db.select(
+        'SELECT i.grp AS grp, i.name AS name, i.url AS url, i.logo AS logo, '
+        'i.tvg_id AS tvg_id FROM items i $_join '
+        'WHERE i.section = ? AND i.name LIKE ? ESCAPE ? '
+        'ORDER BY ${_orderBy(_eff)} LIMIT ? OFFSET ?',
+        <Object?>[s.index, like, r'\', batch, offset],
+      );
+      for (final Row r in rs) {
+        final String group = r['grp'] as String;
+        final String name = r['name'] as String;
+        if (isHidden != null && isHidden(group, name)) continue;
+        out.add(
+          Channel(
+            name: name,
+            url: r['url'] as String,
+            group: group,
+            logo: r['logo'] as String?,
+            tvgId: r['tvg_id'] as String?,
+          ),
+        );
+        if (out.length >= limit) break;
+      }
+      if (rs.length < batch) break;
+      offset += batch;
     }
     return out;
   }

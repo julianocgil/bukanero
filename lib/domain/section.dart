@@ -37,3 +37,6 @@ Section classify(Channel c) {
   }
   return Section.live;
 }
+
+/// Chave para ligar títulos entre fontes: sem acentos, só letras e números.
+String matchKey(String s) => normalize(s).replaceAll(RegExp(r'[^a-z0-9]'), '');

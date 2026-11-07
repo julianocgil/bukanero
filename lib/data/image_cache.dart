@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:collection';
 import 'dart:convert';
 import 'dart:io';
 
@@ -9,10 +8,12 @@ import 'profile_store.dart';
 
 const int _maxActive = 6;
 const int _maxBytes = 10 * 1024 * 1024;
+const Duration _retryAfter = Duration(seconds: 60);
 
 int _active = 0;
-final Queue<Completer<void>> _waiting = Queue<Completer<void>>();
-final Set<String> _failed = <String>{};
+// Pilha: o pedido mais recente (o que está na tela agora) passa na frente.
+final List<Completer<void>> _waiting = <Completer<void>>[];
+final Map<String, DateTime> _failed = <String, DateTime>{};
 final Map<String, Future<File?>> _inflight = <String, Future<File?>>{};
 final HttpClient _client = HttpClient()
   ..connectionTimeout = const Duration(seconds: 10)
@@ -30,14 +31,36 @@ Future<void> _acquire() async {
 
 void _release() {
   if (_waiting.isNotEmpty) {
-    _waiting.removeFirst().complete();
+    _waiting.removeLast().complete();
   } else {
     _active--;
   }
 }
 
+bool _failedRecently(String url) {
+  final DateTime? t = _failed[url];
+  if (t == null) return false;
+  if (DateTime.now().difference(t) > _retryAfter) {
+    _failed.remove(url);
+    return false;
+  }
+  return true;
+}
+
+File _fileFor(String url) =>
+    File('${imageCacheDir().path}/${md5.convert(utf8.encode(url))}');
+
+/// Apaga a imagem em cache (por exemplo, se estava corrompida).
+void forgetImage(String url) {
+  _failed.remove(url);
+  final File f = _fileFor(url);
+  if (f.existsSync()) f.deleteSync();
+}
+
 /// Devolve o arquivo da imagem em cache (baixando se preciso), ou null.
-Future<File?> cachedImage(String url) {
+/// Com [force], ignora uma falha recente e tenta de novo.
+Future<File?> cachedImage(String url, {bool force = false}) {
+  if (force) _failed.remove(url);
   final Future<File?>? running = _inflight[url];
   if (running != null) return running;
   final Future<File?> f = _fetch(url);
@@ -46,19 +69,18 @@ Future<File?> cachedImage(String url) {
 }
 
 Future<File?> _fetch(String url) async {
-  if (_failed.contains(url)) return null;
+  if (_failedRecently(url)) return null;
   final Uri? uri = Uri.tryParse(url);
   if (uri == null ||
       !(uri.scheme == 'http' || uri.scheme == 'https') ||
       uri.host.isEmpty) {
     return null;
   }
-  final File file = File(
-    '${imageCacheDir().path}/${md5.convert(utf8.encode(url))}',
-  );
+  final File file = _fileFor(url);
   if (file.existsSync() && file.lengthSync() > 0) return file;
 
   await _acquire();
+  final File tmp = File('${file.path}.part');
   try {
     final HttpClientRequest req = await _client
         .getUrl(uri)
@@ -72,10 +94,9 @@ Future<File?> _fetch(String url) async {
     );
     if (res.statusCode != 200) {
       await res.drain<void>();
-      _failed.add(url);
+      _failed[url] = DateTime.now();
       return null;
     }
-    final File tmp = File('${file.path}.part');
     final IOSink sink = tmp.openWrite();
     int bytes = 0;
     try {
@@ -92,16 +113,16 @@ Future<File?> _fetch(String url) async {
       await sink.close();
     }
     if (bytes == 0) {
-      tmp.deleteSync();
-      _failed.add(url);
+      _failed[url] = DateTime.now();
       return null;
     }
     tmp.renameSync(file.path);
     return file;
   } on Object {
-    _failed.add(url);
+    _failed[url] = DateTime.now();
     return null;
   } finally {
+    if (tmp.existsSync()) tmp.deleteSync();
     _release();
   }
 }

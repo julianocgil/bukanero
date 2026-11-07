@@ -48,3 +48,6 @@ app.*.map.json
 .widget_preview/
 *.m3u
 *.m3u8
+
+# Claude Code (config pessoal local)
+.claude/settings.local.json

@@ -2,6 +2,9 @@ import 'package:sqlite3/sqlite3.dart';
 
 import '../domain/section.dart';
 
+/// Chave única (categoria + nome) para itens ocultos em buscas globais.
+String hiddenKey(String group, String name) => '$group\u0000$name';
+
 /// Escolhas do usuário por perfil (categorias e itens ocultos).
 /// Fica fora do catálogo para sobreviver a atualizações da lista.
 class UserData {
@@ -75,6 +78,18 @@ class UserData {
         <Object?>[s.index, group, name],
       );
     }
+  }
+
+  /// Todos os itens ocultos da seção, como `hiddenKey(categoria, nome)`.
+  Set<String> hiddenItemKeys(Section s) {
+    final ResultSet rs = _db.select(
+      'SELECT grp, name FROM hidden_items WHERE section = ?',
+      <Object?>[s.index],
+    );
+    return <String>{
+      for (final Row r in rs)
+        hiddenKey(r['grp'] as String, r['name'] as String),
+    };
   }
 
   void close() => _db.close();

@@ -4,7 +4,10 @@ import 'package:flutter/material.dart';
 
 import '../data/image_cache.dart';
 
-/// Imagem da lista com cache em disco e um ícone enquanto carrega ou se falhar.
+/// Imagem da lista com cache em disco.
+///
+/// Ao trocar o endereço, volta na hora para o ícone padrão (nunca mostra a
+/// imagem de outro item) e tenta de novo se o download falhar.
 class CoverImage extends StatefulWidget {
   const CoverImage({
     required this.url,
@@ -24,50 +27,101 @@ class CoverImage extends StatefulWidget {
 }
 
 class _CoverImageState extends State<CoverImage> {
-  Future<File?>? _future;
+  File? _file;
+  bool _loading = false;
+  bool _purged = false;
+  int _gen = 0;
 
   @override
   void initState() {
     super.initState();
-    _future = _load();
+    _start();
   }
 
   @override
   void didUpdateWidget(CoverImage old) {
     super.didUpdateWidget(old);
-    if (old.url != widget.url) _future = _load();
+    if (old.url != widget.url) {
+      _purged = false;
+      _start();
+    }
   }
 
-  Future<File?>? _load() {
+  @override
+  void dispose() {
+    _gen++; // invalida downloads em andamento deste cartão
+    super.dispose();
+  }
+
+  void _start({bool force = false, int attempt = 0}) {
+    final int gen = ++_gen;
+    _file = null;
     final String? u = widget.url;
-    return (u == null || u.isEmpty) ? null : cachedImage(u);
+    if (u == null || u.isEmpty) {
+      _loading = false;
+      return;
+    }
+    _loading = true;
+    cachedImage(u, force: force).then((File? f) async {
+      if (!mounted || gen != _gen) return;
+      if (f == null && attempt < 1) {
+        // Uma segunda chance, para falhas passageiras de rede.
+        await Future<void>.delayed(const Duration(seconds: 5));
+        if (!mounted || gen != _gen) return;
+        _start(force: true, attempt: attempt + 1);
+        setState(() {});
+        return;
+      }
+      setState(() {
+        _file = f;
+        _loading = false;
+      });
+    });
   }
 
-  Widget _placeholder(BuildContext context) {
+  void _purgeAndRetry() {
+    final String? u = widget.url;
+    if (u == null) return;
+    forgetImage(u);
+    setState(_start);
+  }
+
+  Widget _placeholder(BuildContext context, {required bool loading}) {
     final ThemeData t = Theme.of(context);
     return ColoredBox(
       color: t.colorScheme.surfaceContainerHighest,
-      child: Center(child: Icon(widget.icon, color: t.disabledColor)),
+      child: Center(
+        child: loading
+            ? const SizedBox(
+                width: 18,
+                height: 18,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              )
+            : Icon(widget.icon, color: t.disabledColor),
+      ),
     );
   }
 
   @override
   Widget build(BuildContext context) {
-    final Future<File?>? f = _future;
-    if (f == null) return _placeholder(context);
-    return FutureBuilder<File?>(
-      future: f,
-      builder: (BuildContext context, AsyncSnapshot<File?> snap) {
-        final File? file = snap.data;
-        if (file == null) return _placeholder(context);
-        return Image.file(
-          file,
-          fit: widget.fit,
-          cacheWidth: widget.cacheWidth,
-          gaplessPlayback: true,
-          errorBuilder: (BuildContext c, Object e, StackTrace? s) =>
-              _placeholder(c),
-        );
+    final File? file = _file;
+    if (file == null) return _placeholder(context, loading: _loading);
+    return Image.file(
+      file,
+      key: ValueKey<String>(file.path),
+      fit: widget.fit,
+      cacheWidth: widget.cacheWidth,
+      gaplessPlayback: false,
+      errorBuilder: (BuildContext c, Object e, StackTrace? s) {
+        if (!_purged) {
+          // Arquivo em cache corrompido: apaga e baixa de novo uma vez.
+          _purged = true;
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted) _purgeAndRetry();
+          });
+          return _placeholder(c, loading: true);
+        }
+        return _placeholder(c, loading: false);
       },
     );
   }

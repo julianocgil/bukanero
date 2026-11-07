@@ -1,0 +1,27 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(flutter analyze:*)",
+      "Bash(flutter test:*)",
+      "Bash(flutter pub get:*)",
+      "Bash(dart format:*)",
+      "Bash(git status:*)",
+      "Bash(git diff:*)",
+      "Bash(git log:*)"
+    ],
+    "deny": [
+      "Read(./minhalista.m3u)",
+      "Read(./**/*.m3u)",
+      "Read(./**/*.m3u8)",
+      "Read(~/.local/share/meu_iptv/**)",
+      "Edit(./minhalista.m3u)",
+      "Edit(~/.local/share/meu_iptv/**)",
+      "Bash(cat *.m3u*)",
+      "Bash(head *.m3u*)",
+      "Bash(tail *.m3u*)",
+      "Bash(grep * *.m3u*)",
+      "Bash(*profiles.json*)",
+      "Bash(git add -f*)"
+    ]
+  }
+}

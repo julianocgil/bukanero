@@ -8,14 +8,19 @@ import 'package:media_kit_video/media_kit_video.dart';
 import '../data/catalog_db.dart';
 import '../data/download.dart';
 import '../data/epg.dart';
+import '../data/metadata.dart';
 import '../data/profile_store.dart';
+import '../data/series_db.dart';
 import '../data/user_data.dart';
 import '../domain/channel.dart';
 import '../domain/profile.dart';
 import '../domain/section.dart';
+import '../domain/series.dart';
+import '../domain/sort_mode.dart';
 import 'item_views.dart';
 import 'player_bar.dart';
 import 'profile_dialog.dart';
+import 'series_dialog.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -33,16 +38,25 @@ class _HomePageState extends State<HomePage> {
   Future<CatalogDb>? _future;
   CatalogDb? _db;
   UserData? _user;
+  SeriesDb? _series;
   EpgDb? _epg;
   bool _epgBusy = false;
+  bool _metaBusy = false;
   String? _epgStatus;
   final Map<Section, Map<String, int>> _counts = <Section, Map<String, int>>{};
   Section _section = Section.live;
   String? _group;
   String _query = '';
+  Timer? _debounce;
+  final TextEditingController _searchCtl = TextEditingController();
   String? _playing;
   String? _playingUrl;
   bool _showHidden = false;
+  final Map<Section, SortMode> _sorts = <Section, SortMode>{
+    Section.live: SortMode.listOrder,
+    Section.movies: SortMode.listOrder,
+    Section.series: SortMode.nameAsc,
+  };
 
   @override
   void initState() {
@@ -64,6 +78,8 @@ class _HomePageState extends State<HomePage> {
 
   @override
   void dispose() {
+    _debounce?.cancel();
+    _searchCtl.dispose();
     _closeData();
     _player.dispose();
     super.dispose();
@@ -74,6 +90,8 @@ class _HomePageState extends State<HomePage> {
     _db = null;
     _user?.close();
     _user = null;
+    _series?.close();
+    _series = null;
     _epg?.close();
     _epg = null;
   }
@@ -87,7 +105,7 @@ class _HomePageState extends State<HomePage> {
     _counts.clear();
     _profile = p;
     _group = null;
-    _query = '';
+    _setQuery('');
     _playing = null;
     _playingUrl = null;
     _epgStatus = null;
@@ -112,10 +130,16 @@ class _HomePageState extends State<HomePage> {
     }
     final String dbPath = catalogDbPath(p);
     if (!catalogIsFresh(dbPath, m3u)) await importCatalog(m3u, dbPath);
+    await ensureSeriesIndex(dbPath, seriesDbPath(p));
     final CatalogDb db = CatalogDb.open(dbPath);
     _closeData();
     _db = db;
     _user = UserData.open(userDataPath(p));
+    _series = SeriesDb.open(seriesDbPath(p));
+    final String metaPath = metaDbPath(p);
+    db.attachMeta(metaPath);
+    _series?.attachMeta(metaPath);
+    unawaited(Future<void>.microtask(() => _refreshMeta(force: refresh)));
     _epg = EpgDb.tryOpen(epgDbPath(p));
     unawaited(Future<void>.microtask(() => _refreshEpg()));
     return db;
@@ -172,6 +196,52 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
+  bool get _hasMeta => _db?.hasMeta ?? false;
+
+  void _toast(String msg) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(msg), duration: const Duration(seconds: 6)),
+    );
+  }
+
+  Future<void> _refreshMeta({bool force = false}) async {
+    final Profile? p = _profile;
+    final CatalogDb? db = _db;
+    if (!mounted || p == null || db == null || _metaBusy) return;
+    final String path = metaDbPath(p);
+    if (!force && metaIsFresh(path)) return;
+    final ApiAccess? api = deriveApiAccess(p.url, db.sampleItemUrl());
+    if (api == null) {
+      _toast(
+        'Não consegui identificar o servidor da lista para buscar '
+        'notas e datas.',
+      );
+      return;
+    }
+    setState(() => _metaBusy = true);
+    try {
+      await importMetadata(api, path, allowInsecure: p.allowInsecure);
+      if (!mounted || _profile?.id != p.id) {
+        _metaBusy = false;
+        return;
+      }
+      db.attachMeta(path);
+      _series?.attachMeta(path);
+      final (int, int) m = db.metaCoverage();
+      final (int, int) sr = _series?.metaCoverage() ?? (0, 0);
+      setState(() => _metaBusy = false);
+      _toast(
+        'Notas carregadas: ${m.$2} de ${m.$1} filmes, '
+        '${sr.$2} de ${sr.$1} séries.',
+      );
+    } on Object catch (e) {
+      if (!mounted) return;
+      setState(() => _metaBusy = false);
+      _toast('Notas e datas: $e');
+    }
+  }
+
   Future<void> _addProfile() async {
     final Profile? p = await showProfileDialog(context);
     if (p == null || !mounted) return;
@@ -223,6 +293,8 @@ class _HomePageState extends State<HomePage> {
     _closeData();
     deleteProfileData(cur);
     deleteCatalog(cur);
+    deleteSeries(cur);
+    deleteMeta(cur);
     deleteEpg(cur);
     deleteUserData(cur);
     final List<Profile> rest = _profiles
@@ -261,6 +333,26 @@ class _HomePageState extends State<HomePage> {
 
   // ---- ações --------------------------------------------------------------
 
+  Future<void> _openSeries(Channel c) async {
+    final SeriesDb? sdb = _series;
+    if (sdb == null) return;
+    final Channel? ep = await showSeriesDialog(
+      context,
+      title: c.name,
+      cover: c.logo,
+      episodes: sdb.episodes(c.name),
+    );
+    if (ep != null && mounted) _play(ep);
+  }
+
+  void _onItemTap(Channel c) {
+    if (_section == Section.series && c.url.startsWith(seriesUrlPrefix)) {
+      unawaited(_openSeries(c));
+    } else {
+      _play(c);
+    }
+  }
+
   void _play(Channel c) {
     setState(() {
       _playing = c.name;
@@ -277,13 +369,30 @@ class _HomePageState extends State<HomePage> {
   }
 
   void _toggleItem(Channel c, bool hidden) {
-    final String? g = _group;
+    final String? g = _group ?? c.group;
     if (g == null) return;
     _user?.setItemHidden(_section, g, c.name, hidden: !hidden);
     setState(() {});
   }
 
   // ---- interface ----------------------------------------------------------
+
+  void _setQuery(String v) {
+    _debounce?.cancel();
+    _query = v;
+    if (_searchCtl.text != v) _searchCtl.text = v;
+  }
+
+  void _onQuery(String v) {
+    _debounce?.cancel();
+    _debounce = Timer(const Duration(milliseconds: 250), () {
+      if (mounted) setState(() => _query = v);
+    });
+  }
+
+  bool _isHidden(Channel c, Set<String> hidden) => _group != null
+      ? hidden.contains(c.name)
+      : hidden.contains(hiddenKey(c.group ?? '', c.name));
 
   @override
   Widget build(BuildContext context) {
@@ -315,6 +424,25 @@ class _HomePageState extends State<HomePage> {
             tooltip: 'Baixar a lista novamente',
             icon: const Icon(Icons.refresh),
             onPressed: cur == null ? null : () => _select(cur, refresh: true),
+          ),
+          PopupMenuButton<SortMode>(
+            tooltip: 'Ordenar',
+            icon: const Icon(Icons.sort),
+            onSelected: (SortMode m) => setState(() => _sorts[_section] = m),
+            itemBuilder: (BuildContext context) => <PopupMenuEntry<SortMode>>[
+              for (final SortMode m in SortMode.values)
+                if (!m.needsMeta || _section != Section.live)
+                  CheckedPopupMenuItem<SortMode>(
+                    value: m,
+                    enabled: !m.needsMeta || _hasMeta,
+                    checked: _sorts[_section] == m,
+                    child: Text(
+                      (m.needsMeta && !_hasMeta)
+                          ? '${m.label} (${_metaBusy ? 'carregando...' : 'indisponível'})'
+                          : m.label,
+                    ),
+                  ),
+            ],
           ),
           PopupMenuButton<String>(
             tooltip: 'Perfis',
@@ -392,12 +520,16 @@ class _HomePageState extends State<HomePage> {
     }
 
     final CatalogDb db = snap.data!;
+    final SortMode curSort = _sorts[_section] ?? SortMode.listOrder;
+    db.sort = curSort;
+    _series?.sort = curSort;
     final UserData? user = _user;
     if (user == null) return const SizedBox.shrink();
 
-    final Map<String, int> counts = _counts[_section] ??= db.groupCounts(
-      _section,
-    );
+    final Map<String, int> counts = _counts[_section] ??=
+        _section == Section.series
+        ? (_series?.groupCounts() ?? db.groupCounts(_section))
+        : db.groupCounts(_section);
     final Set<String> hiddenGroups = user.hiddenGroups(_section);
     final List<String> groups =
         counts.keys
@@ -405,8 +537,8 @@ class _HomePageState extends State<HomePage> {
             .toList()
           ..sort();
 
-    Set<String> hiddenItems = const <String>{};
-    List<Channel> items = const <Channel>[];
+    Set<String> hiddenItems;
+    List<Channel> items;
     final String? group = _group;
     if (group != null) {
       hiddenItems = user.hiddenItems(_section, group);
@@ -416,6 +548,40 @@ class _HomePageState extends State<HomePage> {
         _query,
         exclude: _showHidden ? const <String>{} : hiddenItems,
       );
+    } else {
+      hiddenItems = user.hiddenItemKeys(_section);
+      final Set<String> keys = hiddenItems;
+      items = db.search(
+        _section,
+        _query,
+        isHidden: _showHidden
+            ? null
+            : (String g, String n) =>
+                  hiddenGroups.contains(g) || keys.contains(hiddenKey(g, n)),
+      );
+    }
+
+    final SeriesDb? sdb = _series;
+    if (_section == Section.series && sdb != null) {
+      if (group != null) {
+        hiddenItems = user.hiddenItems(_section, group);
+        final Set<String> skip = hiddenItems;
+        items = sdb.list(
+          group,
+          _query,
+          exclude: _showHidden ? const <String>{} : skip,
+        );
+      } else {
+        hiddenItems = user.hiddenItemKeys(_section);
+        final Set<String> keys = hiddenItems;
+        items = sdb.search(
+          _query,
+          isHidden: _showHidden
+              ? null
+              : (String g, String n) =>
+                    hiddenGroups.contains(g) || keys.contains(hiddenKey(g, n)),
+        );
+      }
     }
 
     return Row(
@@ -469,9 +635,19 @@ class _HomePageState extends State<HomePage> {
             onSelectionChanged: (Set<Section> s) => setState(() {
               _section = s.first;
               _group = null;
-              _query = '';
+              _setQuery('');
             }),
           ),
+        ),
+        ListTile(
+          dense: true,
+          leading: const Icon(Icons.apps, size: 18),
+          title: const Text('Todas as categorias'),
+          selected: _group == null,
+          onTap: () => setState(() {
+            _group = null;
+            _setQuery('');
+          }),
         ),
         Expanded(
           child: ListView.builder(
@@ -505,7 +681,7 @@ class _HomePageState extends State<HomePage> {
                 ),
                 onTap: () => setState(() {
                   _group = g;
-                  _query = '';
+                  _setQuery('');
                 }),
               );
             },
@@ -538,17 +714,16 @@ class _HomePageState extends State<HomePage> {
     final bool live = _section == Section.live;
     final int now = DateTime.now().millisecondsSinceEpoch ~/ 1000;
     Widget body;
-    if (_group == null) {
-      body = const Center(child: Text('Escolha uma categoria'));
-    } else if (items.isEmpty) {
+    if (items.isEmpty) {
       body = const Center(child: Text('Nada por aqui'));
     } else if (live) {
       body = ListView.builder(
         itemCount: items.length,
         itemBuilder: (BuildContext context, int i) {
           final Channel c = items[i];
-          final bool hidden = hiddenItems.contains(c.name);
+          final bool hidden = _isHidden(c, hiddenItems);
           return LiveTile(
+            key: ValueKey<String>(c.url),
             channel: c,
             selected: c.url == _playingUrl,
             hidden: hidden,
@@ -571,12 +746,13 @@ class _HomePageState extends State<HomePage> {
         itemCount: items.length,
         itemBuilder: (BuildContext context, int i) {
           final Channel c = items[i];
-          final bool hidden = hiddenItems.contains(c.name);
+          final bool hidden = _isHidden(c, hiddenItems);
           return PosterCard(
+            key: ValueKey<String>(c.url),
             channel: c,
             selected: c.url == _playingUrl,
             hidden: hidden,
-            onTap: () => _play(c),
+            onTap: () => _onItemTap(c),
             onToggleHidden: () => _toggleItem(c, hidden),
           );
         },
@@ -588,14 +764,14 @@ class _HomePageState extends State<HomePage> {
         Padding(
           padding: const EdgeInsets.all(8),
           child: TextField(
-            enabled: _group != null,
+            controller: _searchCtl,
             decoration: const InputDecoration(
               prefixIcon: Icon(Icons.search),
-              hintText: 'Buscar na categoria',
+              hintText: 'Buscar pelo nome',
               isDense: true,
               border: OutlineInputBorder(),
             ),
-            onChanged: (String v) => setState(() => _query = v),
+            onChanged: _onQuery,
           ),
         ),
         Expanded(child: body),

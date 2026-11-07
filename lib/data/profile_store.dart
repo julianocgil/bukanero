@@ -90,3 +90,17 @@ void deleteUserData(Profile p) {
   final File f = File(userDataPath(p));
   if (f.existsSync()) f.deleteSync();
 }
+
+String seriesDbPath(Profile p) => '${dataDir().path}/series_${p.id}.db';
+
+void deleteSeries(Profile p) {
+  final File f = File(seriesDbPath(p));
+  if (f.existsSync()) f.deleteSync();
+}
+
+String metaDbPath(Profile p) => '${dataDir().path}/meta_${p.id}.db';
+
+void deleteMeta(Profile p) {
+  final File f = File(metaDbPath(p));
+  if (f.existsSync()) f.deleteSync();
+}
