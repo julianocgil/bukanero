@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Bukanero
+GenericName=Player IPTV
+Comment=Assista aos canais, filmes e séries da sua lista IPTV
+Exec=bukanero
+Icon=io.github.julianocgil.Bukanero
+Terminal=false
+Categories=AudioVideo;Video;Player;TV;
+Keywords=IPTV;TV;M3U;EPG;filmes;séries;
+StartupWMClass=bukanero
