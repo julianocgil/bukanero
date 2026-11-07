@@ -7,7 +7,7 @@ Meta: empacotar como Flatpak. Idioma da conversa e da UI: português do Brasil.
 ## Estrutura
 - `lib/domain/` modelos puros (Channel, Section, Profile, series, sort_mode, stream_id)
 - `lib/data/` M3U parser, download, SQLite (catalog/series/meta/epg/user_data), cache de imagens, profile_store
-- `lib/ui/` home_page, item_views, cover_image, series_dialog, player_bar, profile_dialog,
+- `lib/ui/` home_page, item_views, cover_image, series_dialog, player_view, profile_dialog,
   guide_page (grade do EPG), perf_monitor (FPS)
 - `test/` testes por módulo
 - `packages/media_kit_video/` cópia local do 2.0.1 com o PR media-kit#1466 (vídeo pela GPU no

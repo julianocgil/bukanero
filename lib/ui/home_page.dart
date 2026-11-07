@@ -20,7 +20,7 @@ import '../domain/sort_mode.dart';
 import 'guide_page.dart';
 import 'item_views.dart';
 import 'perf_monitor.dart';
-import 'player_bar.dart';
+import 'player_view.dart';
 import 'profile_dialog.dart';
 import 'series_dialog.dart';
 
@@ -644,22 +644,11 @@ class _HomePageState extends State<HomePage> {
         ),
         const VerticalDivider(width: 1),
         Expanded(
-          child: Column(
+          child: Stack(
             children: <Widget>[
-              Expanded(
-                child: Stack(
-                  children: <Widget>[
-                    Positioned.fill(child: Video(controller: _video)),
-                    if (_perf.running)
-                      Positioned(
-                        top: 8,
-                        left: 8,
-                        child: PerfOverlay(monitor: _perf),
-                      ),
-                  ],
-                ),
-              ),
-              PlayerBar(player: _player),
+              Positioned.fill(child: PlayerView(controller: _video)),
+              if (_perf.running)
+                Positioned(top: 8, left: 8, child: PerfOverlay(monitor: _perf)),
             ],
           ),
         ),
