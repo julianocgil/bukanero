@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:meu_iptv/data/catalog_db.dart';
 import 'package:meu_iptv/data/epg.dart';
+import 'package:meu_iptv/data/metadata.dart';
 import 'package:meu_iptv/data/user_data.dart';
 import 'package:meu_iptv/domain/section.dart';
 
@@ -25,14 +26,21 @@ void main() {
     expect(epgUrlsFromHeader('#EXTM3U'), isEmpty);
   });
 
-  test('xmltv derivado de get.php (Xtream)', () {
+  test('xmltv do servidor da lista (Xtream)', () {
+    final ApiAccess? fromGet = deriveApiAccess(
+      'http://h:8080/get.php?username=u&password=p&type=m3u_plus',
+      null,
+    );
+    expect(xmltvUrl(fromGet!), 'http://h:8080/xmltv.php?username=u&password=p');
+    final ApiAccess? fromItem = deriveApiAccess(
+      'http://h/lista.m3u',
+      'http://h:8080/live/u/p/1.ts',
+    );
     expect(
-      deriveXtreamEpgUrl(
-        'http://h:8080/get.php?username=u&password=p&type=m3u_plus',
-      ),
+      xmltvUrl(fromItem!),
       'http://h:8080/xmltv.php?username=u&password=p',
     );
-    expect(deriveXtreamEpgUrl('http://h/lista.m3u'), isNull);
+    expect(deriveApiAccess('http://h/lista.m3u', null), isNull);
   });
 
   test('hora XMLTV respeita o fuso', () {
@@ -73,6 +81,63 @@ void main() {
     expect(epg.channelIds(), <String>{'canal.a'});
   });
 
+  test('chave de nome ignora qualidade, acentos e prefixo de país', () {
+    expect(epgNameKey('BR: Canal Exemplo FHD'), 'canalexemplo');
+    expect(epgNameKey('Canal Exemplo HD [Alt]'), 'canalexemplo');
+    expect(epgNameKey('Canal Exemplo (H.265)'), 'canalexemplo');
+    expect(epgNameKey('Notícias 24h 4K'), 'noticias24h');
+    expect(epgNameKey('HD'), 'hd');
+  });
+
+  test('sem tvg-id, liga o canal ao guia pelo nome', () async {
+    final Directory dir = Directory.systemTemp.createTempSync('meuiptv');
+    addTearDown(() => dir.deleteSync(recursive: true));
+    final DateTime now = DateTime.now();
+    final String past = _xmltv(now.subtract(const Duration(hours: 1)));
+    final String h1 = _xmltv(now.add(const Duration(hours: 1)));
+    final File xml = File('${dir.path}/g.xml')
+      ..writeAsStringSync('''<?xml version="1.0" encoding="UTF-8"?>
+<tv>
+  <channel id="exemplo.br"><display-name>Canal Exemplo</display-name></channel>
+  <channel id="outro.br"><display-name>Outro HD</display-name></channel>
+  <programme start="$past" stop="$h1" channel="exemplo.br">
+    <title>Jornal</title>
+  </programme>
+  <programme start="$past" stop="$h1" channel="outro.br">
+    <title>Filme</title>
+  </programme>
+</tv>
+''');
+    final String dbPath = '${dir.path}/e.db';
+    await importEpg(<String>[xml.path], dbPath);
+
+    final EpgDb epg = EpgDb.tryOpen(dbPath)!;
+    addTearDown(epg.close);
+    expect(epg.hasNames, isTrue);
+    final int t = now.millisecondsSinceEpoch ~/ 1000;
+    expect(
+      epg.nowNext(null, t, name: 'BR: Canal Exemplo FHD').$1?.title,
+      'Jornal',
+    );
+    expect(epg.nowNext('', t, name: 'Outro').$1?.title, 'Filme');
+    // tvg-id que não existe no guia cai para o nome.
+    expect(epg.nowNext('x', t, name: 'Outro').$1?.title, 'Filme');
+    expect(epg.nowNext(null, t, name: 'Sem Guia').$1, isNull);
+    expect(
+      epg.programmes('exemplo.br', t, t + 60).map((Programme p) => p.title),
+      <String>['Jornal'],
+    );
+    expect(epg.programmes('exemplo.br', t + 7200, t + 9000), isEmpty);
+    expect(
+      epg.matchCount(<(String?, String)>[
+        (null, 'Canal Exemplo HD'),
+        ('exemplo.br', 'Qualquer'),
+        (null, 'Sem Guia'),
+      ]),
+      2,
+    );
+  });
+
   test('catálogo guarda o guia do cabeçalho e exclui ocultos', () async {
     final Directory dir = Directory.systemTemp.createTempSync('meuiptv');
     addTearDown(() => dir.deleteSync(recursive: true));
@@ -89,7 +154,10 @@ http://s/2
     final CatalogDb db = CatalogDb.open(dbPath);
     addTearDown(db.close);
     expect(db.epgUrls(), <String>['http://a/x.xml']);
-    expect(db.liveTvgIds(), <String>{'cnn'});
+    expect(db.liveChannels(), <(String?, String)>[
+      ('CNN', 'Um'),
+      (null, 'Dois'),
+    ]);
     final names = db
         .items(Section.live, 'Canais | A', '', exclude: <String>{'Um'})
         .map((c) => c.name)

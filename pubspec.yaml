@@ -94,3 +94,9 @@ flutter:
   #
   # For details regarding fonts from package dependencies,
   # see https://flutter.dev/to/font-from-package
+
+# Cópia local do media_kit_video 2.0.1 com a correção do PR media-kit#1466
+# (vídeo pela placa de vídeo no Flutter 3.38+). Remover quando sair oficial.
+dependency_overrides:
+  media_kit_video:
+    path: packages/media_kit_video

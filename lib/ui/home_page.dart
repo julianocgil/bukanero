@@ -17,7 +17,9 @@ import '../domain/profile.dart';
 import '../domain/section.dart';
 import '../domain/series.dart';
 import '../domain/sort_mode.dart';
+import 'guide_page.dart';
 import 'item_views.dart';
+import 'perf_monitor.dart';
 import 'player_bar.dart';
 import 'profile_dialog.dart';
 import 'series_dialog.dart';
@@ -32,6 +34,7 @@ class HomePage extends StatefulWidget {
 class _HomePageState extends State<HomePage> {
   final Player _player = Player();
   late final VideoController _video = VideoController(_player);
+  late final PerfMonitor _perf = PerfMonitor(_player);
 
   List<Profile> _profiles = <Profile>[];
   Profile? _profile;
@@ -81,6 +84,7 @@ class _HomePageState extends State<HomePage> {
     _debounce?.cancel();
     _searchCtl.dispose();
     _closeData();
+    _perf.dispose();
     _player.dispose();
     super.dispose();
   }
@@ -150,7 +154,7 @@ class _HomePageState extends State<HomePage> {
     final CatalogDb? db = _db;
     if (!mounted || p == null || db == null || _epgBusy) return;
     final String path = epgDbPath(p);
-    if (!force && epgIsFresh(path)) return;
+    if (!force && epgIsFresh(path) && (_epg?.hasNames ?? false)) return;
 
     List<String> urls;
     final String? manual = p.epgUrl;
@@ -160,8 +164,14 @@ class _HomePageState extends State<HomePage> {
       urls = db.epgUrls();
     }
     if (urls.isEmpty) {
+      // A lista não informa o guia: usa o do próprio servidor da lista.
+      final ApiAccess? api = deriveApiAccess(p.url, db.sampleItemUrl());
+      if (api != null) urls = <String>[xmltvUrl(api)];
+    }
+    if (urls.isEmpty) {
       setState(
-        () => _epgStatus = 'Esta lista não informa o endereço do guia (EPG).',
+        () => _epgStatus =
+            'Não achei o guia (EPG) nem na lista nem no servidor dela.',
       );
       return;
     }
@@ -179,9 +189,7 @@ class _HomePageState extends State<HomePage> {
       }
       _epg?.close();
       final EpgDb? e = EpgDb.tryOpen(path);
-      final int matched = e == null
-          ? 0
-          : e.channelIds().intersection(cur.liveTvgIds()).length;
+      final int matched = e?.matchCount(cur.liveChannels()) ?? 0;
       setState(() {
         _epg = e;
         _epgBusy = false;
@@ -345,6 +353,31 @@ class _HomePageState extends State<HomePage> {
     if (ep != null && mounted) _play(ep);
   }
 
+  Future<void> _openGuide() async {
+    final CatalogDb? db = _db;
+    final UserData? user = _user;
+    final EpgDb? epg = _epg;
+    if (db == null || user == null || epg == null) return;
+    final Set<String> groups = user.hiddenGroups(Section.live);
+    final Set<String> keys = user.hiddenItemKeys(Section.live);
+    final List<Channel> channels = db.search(
+      Section.live,
+      '',
+      limit: 1 << 30,
+      isHidden: _showHidden
+          ? null
+          : (String g, String n) =>
+                groups.contains(g) || keys.contains(hiddenKey(g, n)),
+    );
+    final Channel? c = await showGuide(
+      context,
+      channels: channels,
+      epg: epg,
+      group: _section == Section.live ? _group : null,
+    );
+    if (c != null && mounted) _play(c);
+  }
+
   void _onItemTap(Channel c) {
     if (_section == Section.series && c.url.startsWith(seriesUrlPrefix)) {
       unawaited(_openSeries(c));
@@ -412,6 +445,23 @@ class _HomePageState extends State<HomePage> {
               _showHidden = !_showHidden;
               _group = null;
             }),
+          ),
+          IconButton(
+            tooltip: _perf.running
+                ? 'Desligar o monitor de desempenho'
+                : 'Monitor de desempenho (FPS)',
+            icon: Icon(_perf.running ? Icons.speed : Icons.speed_outlined),
+            isSelected: _perf.running,
+            onPressed: () {
+              setState(_perf.toggle);
+              final String? path = _perf.logPath;
+              if (path != null) _toast('Gravando o histórico em $path');
+            },
+          ),
+          IconButton(
+            tooltip: 'Guia de programação: todos os canais',
+            icon: const Icon(Icons.view_timeline_outlined),
+            onPressed: _epg == null ? null : _openGuide,
           ),
           IconButton(
             tooltip: 'Atualizar o guia de programação (EPG)',
@@ -596,7 +646,19 @@ class _HomePageState extends State<HomePage> {
         Expanded(
           child: Column(
             children: <Widget>[
-              Expanded(child: Video(controller: _video)),
+              Expanded(
+                child: Stack(
+                  children: <Widget>[
+                    Positioned.fill(child: Video(controller: _video)),
+                    if (_perf.running)
+                      Positioned(
+                        top: 8,
+                        left: 8,
+                        child: PerfOverlay(monitor: _perf),
+                      ),
+                  ],
+                ),
+              ),
               PlayerBar(player: _player),
             ],
           ),
@@ -620,15 +682,18 @@ class _HomePageState extends State<HomePage> {
             segments: const <ButtonSegment<Section>>[
               ButtonSegment<Section>(
                 value: Section.live,
-                label: Text('Ao vivo'),
+                icon: Icon(Icons.live_tv),
+                tooltip: 'Ao vivo',
               ),
               ButtonSegment<Section>(
                 value: Section.movies,
-                label: Text('Filmes'),
+                icon: Icon(Icons.movie_outlined),
+                tooltip: 'Filmes',
               ),
               ButtonSegment<Section>(
                 value: Section.series,
-                label: Text('Séries'),
+                icon: Icon(Icons.video_library_outlined),
+                tooltip: 'Séries',
               ),
             ],
             selected: <Section>{_section},
@@ -728,7 +793,7 @@ class _HomePageState extends State<HomePage> {
             selected: c.url == _playingUrl,
             hidden: hidden,
             nowSecs: now,
-            current: _epg?.nowNext(c.tvgId, now).$1,
+            current: _epg?.nowNext(c.tvgId, now, name: c.name).$1,
             onTap: () => _play(c),
             onToggleHidden: () => _toggleItem(c, hidden),
           );

@@ -6,9 +6,28 @@ import 'package:sqlite3/sqlite3.dart';
 import 'package:xml/xml.dart';
 import 'package:xml/xml_events.dart';
 
+import '../domain/section.dart';
 import 'download.dart';
 
 final RegExp _hdrAttr = RegExp(r'([\w-]+)="([^"]*)"');
+final RegExp _nameBrackets = RegExp(r'[\[({][^\])}]*[\])}]');
+final RegExp _namePrefix = RegExp(r'^\s*[a-z]{2,3}\s*[:|]\s*');
+final RegExp _nameTags = RegExp(
+  r'\b(?:uhd|fhd|hd|sd|4k|8k|hevc|h\.?26[45]|hdr|\d{2,3}\s?fps|alt)\b',
+);
+final RegExp _idCountry = RegExp(r'\.[a-z]{2}$');
+
+/// Chave para ligar o nome do canal da lista ao nome do canal no guia:
+/// ignora acentos, marcações de qualidade (HD, FHD, 4K...), texto entre
+/// colchetes/parênteses e prefixos de país como `BR:`.
+String epgNameKey(String name) {
+  final String s = normalize(name)
+      .replaceAll(_nameBrackets, ' ')
+      .replaceFirst(_namePrefix, '')
+      .replaceAll(_nameTags, ' ');
+  final String k = matchKey(s);
+  return k.isEmpty ? matchKey(name) : k;
+}
 
 /// URLs do guia declaradas na primeira linha do M3U (`url-tvg`, `x-tvg-url`).
 List<String> epgUrlsFromHeader(String line) {
@@ -24,22 +43,6 @@ List<String> epgUrlsFromHeader(String line) {
     }
   }
   return urls;
-}
-
-/// Para painéis Xtream: de `get.php?username=..&password=..` para `xmltv.php`.
-String? deriveXtreamEpgUrl(String playlistUrl) {
-  final Uri? u = Uri.tryParse(playlistUrl.trim());
-  if (u == null || !u.hasScheme || u.host.isEmpty) return null;
-  final String? user = u.queryParameters['username'];
-  final String? pass = u.queryParameters['password'];
-  if (user == null || user.isEmpty || pass == null) return null;
-  return Uri(
-    scheme: u.scheme,
-    host: u.host,
-    port: u.hasPort ? u.port : null,
-    path: '/xmltv.php',
-    queryParameters: <String, String>{'username': user, 'password': pass},
-  ).toString();
 }
 
 /// Converte `20261015120000 -0300` (XMLTV) em segundos desde 1970 (UTC).
@@ -110,9 +113,15 @@ Future<int> importEpg(
         'CREATE TABLE prog(channel TEXT NOT NULL, start INTEGER NOT NULL, '
         'stop INTEGER NOT NULL, title TEXT NOT NULL, descr TEXT)',
       );
+      db.execute(
+        'CREATE TABLE chan(nkey TEXT NOT NULL, channel TEXT NOT NULL)',
+      );
       final PreparedStatement ins = db.prepare(
         'INSERT INTO prog(channel, start, stop, title, descr) '
         'VALUES (?, ?, ?, ?, ?)',
+      );
+      final PreparedStatement insChan = db.prepare(
+        'INSERT INTO chan(nkey, channel) VALUES (?, ?)',
       );
       final int now = DateTime.now().millisecondsSinceEpoch ~/ 1000;
       int ok = 0;
@@ -129,6 +138,7 @@ Future<int> importEpg(
             file,
             db,
             ins,
+            insChan,
             now - 3 * 3600,
             now + 48 * 3600,
           );
@@ -140,12 +150,14 @@ Future<int> importEpg(
         }
       }
       ins.close();
+      insChan.close();
       if (ok == 0) {
         throw DownloadException(
           lastError ?? 'nenhuma fonte de guia disponível',
         );
       }
       db.execute('CREATE INDEX idx_prog ON prog(channel, start)');
+      db.execute('CREATE INDEX idx_chan ON chan(nkey)');
     } finally {
       db.close();
     }
@@ -160,6 +172,7 @@ Future<int> _parseInto(
   File file,
   Database db,
   PreparedStatement ins,
+  PreparedStatement insChan,
   int from,
   int to,
 ) async {
@@ -175,7 +188,8 @@ Future<int> _parseInto(
       .toXmlEvents()
       .normalizeEvents()
       .selectSubtreeEvents(
-        (XmlStartElementEvent e) => e.localName == 'programme',
+        (XmlStartElementEvent e) =>
+            e.localName == 'programme' || e.localName == 'channel',
       )
       .toXmlNodes()
       .flatten();
@@ -185,6 +199,18 @@ Future<int> _parseInto(
   try {
     await for (final XmlNode node in nodes) {
       if (node is! XmlElement) continue;
+      if (node.localName == 'channel') {
+        final String? id = node.getAttribute('id')?.trim().toLowerCase();
+        if (id == null || id.isEmpty) continue;
+        // Nomes de exibição primeiro; o próprio id serve de último recurso.
+        for (final XmlElement d in node.findElements('display-name')) {
+          final String k = epgNameKey(d.innerText);
+          if (k.isNotEmpty) insChan.execute(<Object?>[k, id]);
+        }
+        final String k = epgNameKey(id.replaceFirst(_idCountry, ''));
+        if (k.isNotEmpty) insChan.execute(<Object?>[k, id]);
+        continue;
+      }
       final String? ch = node.getAttribute('channel');
       final int? st = parseXmltvTime(node.getAttribute('start') ?? '');
       final int? sp = parseXmltvTime(node.getAttribute('stop') ?? '');
@@ -223,19 +249,83 @@ class EpgDb {
   }
 
   final Database _db;
+  late final Set<String> _ids = channelIds();
+  late final Map<String, String> _byName = _loadNames();
+  final Map<String, String?> _resolved = <String, String?>{};
+
+  /// Guias importados antes da ligação por nome não têm a tabela `chan`.
+  bool get hasNames => _db
+      .select(
+        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'chan'",
+      )
+      .isNotEmpty;
+
+  Map<String, String> _loadNames() {
+    if (!hasNames) return const <String, String>{};
+    final Map<String, String> m = <String, String>{};
+    final ResultSet rs = _db.select(
+      'SELECT nkey, channel FROM chan ORDER BY rowid',
+    );
+    for (final Row r in rs) {
+      m.putIfAbsent(r['nkey'] as String, () => r['channel'] as String);
+    }
+    return m;
+  }
 
   Set<String> channelIds() {
     final ResultSet rs = _db.select('SELECT DISTINCT channel FROM prog');
     return <String>{for (final Row r in rs) r['channel'] as String};
   }
 
-  /// (programa atual, próximo programa) do canal com este tvg-id.
-  (Programme?, Programme?) nowNext(String? tvgId, int nowSecs) {
-    if (tvgId == null || tvgId.isEmpty) return (null, null);
+  /// Canal do guia para um item da lista: pelo tvg-id e, sem ele, pelo nome.
+  String? channelFor(String? tvgId, String name) {
+    if (tvgId != null && tvgId.isNotEmpty) {
+      final String id = tvgId.toLowerCase();
+      if (_ids.contains(id)) return id;
+    }
+    if (name.isEmpty) return null;
+    return _resolved.putIfAbsent(name, () => _byName[epgNameKey(name)]);
+  }
+
+  /// Quantos itens da lista têm programação no guia.
+  int matchCount(Iterable<(String?, String)> channels) {
+    int n = 0;
+    for (final (String? id, String name) in channels) {
+      if (channelFor(id, name) != null) n++;
+    }
+    return n;
+  }
+
+  /// Programas do canal do guia [channel] que passam entre [from] e [to].
+  List<Programme> programmes(String channel, int from, int to) {
+    final ResultSet rs = _db.select(
+      'SELECT start, stop, title, descr FROM prog '
+      'WHERE channel = ? AND stop > ? AND start < ? ORDER BY start',
+      <Object?>[channel, from, to],
+    );
+    return <Programme>[
+      for (final Row r in rs)
+        Programme(
+          title: r['title'] as String,
+          descr: r['descr'] as String?,
+          start: r['start'] as int,
+          stop: r['stop'] as int,
+        ),
+    ];
+  }
+
+  /// (programa atual, próximo programa) do canal, pelo tvg-id ou pelo nome.
+  (Programme?, Programme?) nowNext(
+    String? tvgId,
+    int nowSecs, {
+    String name = '',
+  }) {
+    final String? ch = channelFor(tvgId, name);
+    if (ch == null) return (null, null);
     final ResultSet rs = _db.select(
       'SELECT start, stop, title, descr FROM prog '
       'WHERE channel = ? AND stop > ? ORDER BY start LIMIT 2',
-      <Object?>[tvgId.toLowerCase(), nowSecs],
+      <Object?>[ch, nowSecs],
     );
     Programme? cur;
     Programme? next;

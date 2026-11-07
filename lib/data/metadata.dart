@@ -45,6 +45,14 @@ ApiAccess? deriveApiAccess(String profileUrl, String? sampleItemUrl) {
   return ApiAccess(_origin(s), segs[0], segs[1]);
 }
 
+/// Guia XMLTV do próprio servidor da lista (`xmltv.php`).
+String xmltvUrl(ApiAccess a) => Uri.parse(a.base)
+    .replace(
+      path: '/xmltv.php',
+      queryParameters: <String, String>{'username': a.user, 'password': a.pass},
+    )
+    .toString();
+
 Uri _apiUri(ApiAccess a, String action) => Uri.parse(a.base).replace(
   path: '/player_api.php',
   queryParameters: <String, String>{

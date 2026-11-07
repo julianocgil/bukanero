@@ -301,13 +301,14 @@ class CatalogDb {
     return v.isEmpty ? const <String>[] : v.split('\n');
   }
 
-  /// tvg-id (minúsculo) dos canais ao vivo, para conferir com o guia.
-  Set<String> liveTvgIds() {
+  /// (tvg-id, nome) dos canais ao vivo, para conferir com o guia.
+  List<(String?, String)> liveChannels() {
     final ResultSet rs = _db.select(
-      'SELECT DISTINCT lower(tvg_id) AS t FROM items '
-      'WHERE section = 0 AND tvg_id IS NOT NULL AND length(tvg_id) > 0',
+      'SELECT tvg_id, name FROM items WHERE section = 0 ORDER BY id',
     );
-    return <String>{for (final Row r in rs) r['t'] as String};
+    return <(String?, String)>[
+      for (final Row r in rs) (r['tvg_id'] as String?, r['name'] as String),
+    ];
   }
 
   void close() => _db.close();
