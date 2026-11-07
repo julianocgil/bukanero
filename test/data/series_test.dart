@@ -7,6 +7,7 @@ import 'package:bukanero/domain/channel.dart';
 import 'package:bukanero/domain/series.dart';
 
 void main() {
+  _genericLogoTest();
   test('reconhece temporada e episódio no nome', () {
     final EpisodeInfo? a = parseEpisode('Rick and Morty The Anime S01E10');
     expect(a?.title, 'Rick and Morty The Anime');
@@ -69,5 +70,33 @@ http://s/series/u/p/5.mp4
       '2x1',
     ]);
     expect(eps.first.url, 'http://s/series/u/p/1.mp4');
+  });
+}
+
+void _genericLogoTest() {
+  test('imagem de episódio repetida em outra série é ignorada', () async {
+    final Directory dir = Directory.systemTemp.createTempSync('bukanero');
+    addTearDown(() => dir.deleteSync(recursive: true));
+    final File m3u = File('${dir.path}/a.m3u')
+      ..writeAsStringSync('''
+#EXTM3U
+#EXTINF:-1 tvg-logo="http://s/generica.jpg" group-title="Series | A",Alfa S01E01
+http://s/series/u/p/1.mp4
+#EXTINF:-1 tvg-logo="http://s/alfa2.jpg" group-title="Series | A",Alfa S01E02
+http://s/series/u/p/2.mp4
+#EXTINF:-1 tvg-logo="http://s/generica.jpg" group-title="Series | A",Beta S01E01
+http://s/series/u/p/3.mp4
+''');
+    final String catPath = '${dir.path}/c.db';
+    final String serPath = '${dir.path}/s.db';
+    await importCatalog(m3u.path, catPath);
+    await ensureSeriesIndex(catPath, serPath);
+    final SeriesDb db = SeriesDb.open(serPath);
+    addTearDown(db.close);
+    expect(db.episodes('Alfa').map((Episode e) => e.logo), <String?>[
+      null,
+      'http://s/alfa2.jpg',
+    ]);
+    expect(db.episodes('Beta').single.logo, isNull);
   });
 }

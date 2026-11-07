@@ -8,7 +8,7 @@ import '../domain/section.dart';
 import '../domain/series.dart';
 import '../domain/sort_mode.dart';
 
-const int _version = 3;
+const int _version = 4;
 
 String _escapeLike(String q) =>
     q.replaceAll(r'\', r'\\').replaceAll('%', r'\%').replaceAll('_', r'\_');
@@ -150,6 +150,14 @@ void _build(Database cat, String seriesPath, String stamp) {
                           THEN season * 10000 + episode END) AS m
           FROM episodes GROUP BY grp, title
         );
+      -- Imagens de episódio que aparecem em séries diferentes são genéricas
+      -- do provedor (a mesma foto em centenas de séries): não servem.
+      CREATE TABLE generic_logo(logo TEXT PRIMARY KEY);
+      INSERT INTO generic_logo(logo)
+        SELECT logo FROM episodes WHERE logo IS NOT NULL AND logo <> ''
+        GROUP BY logo HAVING COUNT(DISTINCT title) > 1;
+      UPDATE series SET logo = NULL
+        WHERE logo IN (SELECT logo FROM generic_logo);
       UPDATE series SET pos = (
         SELECT MIN(rowid) FROM episodes e
         WHERE e.grp = series.grp AND e.title = series.title
@@ -180,6 +188,7 @@ class SeriesDb {
   final Database _db;
   bool _metaOn = false;
   bool _coverOn = false;
+  bool _infoOn = false;
 
   /// Ordem usada por [list] e [search].
   SortMode sort = SortMode.nameAsc;
@@ -194,12 +203,16 @@ class SeriesDb {
       _db.execute('ATTACH DATABASE ? AS mx', <Object?>[path]);
       _metaOn = true;
       // Bancos de notas antigos não têm o pôster das séries.
-      _coverOn = _db
-          .select('PRAGMA mx.table_info(series)')
-          .any((Row r) => r['name'] == 'cover');
+      final Set<String> cols = <String>{
+        for (final Row r in _db.select('PRAGMA mx.table_info(series)'))
+          r['name'] as String,
+      };
+      _coverOn = cols.contains('cover');
+      _infoOn = cols.contains('sid') && cols.contains('plot');
     } on Object {
       _metaOn = false;
       _coverOn = false;
+      _infoOn = false;
     }
     return _metaOn;
   }
@@ -213,6 +226,7 @@ class SeriesDb {
     }
     _metaOn = false;
     _coverOn = false;
+    _infoOn = false;
   }
 
   SortMode get _eff => (sort.needsMeta && !_metaOn) ? SortMode.listOrder : sort;
@@ -314,11 +328,28 @@ class SeriesDb {
     return out;
   }
 
+  /// Id da série no servidor e a sinopse, quando as notas já chegaram.
+  (int?, String?) seriesInfo(String title) {
+    if (!_infoOn) return (null, null);
+    final ResultSet rs = _db.select(
+      'SELECT m.sid AS sid, m.plot AS plot FROM series s '
+      'JOIN mx.series m ON m.mkey = s.mkey WHERE s.title = ? LIMIT 1',
+      <Object?>[title],
+    );
+    if (rs.isEmpty) return (null, null);
+    return (rs.first['sid'] as int?, rs.first['plot'] as String?);
+  }
+
   /// Episódios de uma série, ordenados, sem repetir temporada e episódio.
   List<Episode> episodes(String title) {
+    // Imagem genérica (repetida em outras séries) vira null: a janela usa
+    // a imagem da própria série no lugar.
     final ResultSet rs = _db.select(
-      'SELECT name, url, season, episode, logo FROM episodes '
-      'WHERE title = ? ORDER BY season, episode, rowid',
+      'SELECT e.name AS name, e.url AS url, e.season AS season, '
+      'e.episode AS episode, '
+      'CASE WHEN g.logo IS NULL THEN e.logo END AS logo '
+      'FROM episodes e LEFT JOIN generic_logo g ON g.logo = e.logo '
+      'WHERE e.title = ? ORDER BY e.season, e.episode, e.rowid',
       <Object?>[title],
     );
     final Set<int> seen = <int>{};

@@ -53,12 +53,18 @@ String xmltvUrl(ApiAccess a) => Uri.parse(a.base)
     )
     .toString();
 
-Uri _apiUri(ApiAccess a, String action) => Uri.parse(a.base).replace(
+/// Endereço da API (`player_api.php`) do próprio servidor da lista.
+Uri apiUri(
+  ApiAccess a,
+  String action, [
+  Map<String, String> extra = const <String, String>{},
+]) => Uri.parse(a.base).replace(
   path: '/player_api.php',
   queryParameters: <String, String>{
     'username': a.user,
     'password': a.pass,
     'action': action,
+    ...extra,
   },
 );
 
@@ -95,14 +101,19 @@ String? _image(Object? v) {
   return (t.startsWith('http://') || t.startsWith('https://')) ? t : null;
 }
 
-/// Bancos gravados antes do pôster das séries não têm a coluna `cover`.
+/// Colunas de `series` que um banco atual precisa ter; bancos gravados
+/// por versões antigas do app são baixados de novo.
+const Set<String> _seriesColumns = <String>{'cover', 'sid', 'plot'};
+
 bool _hasSeriesCover(String dbPath) {
   Database? db;
   try {
     db = sqlite3.open(dbPath, mode: OpenMode.readOnly);
-    return db
-        .select('PRAGMA table_info(series)')
-        .any((Row r) => r['name'] == 'cover');
+    final Set<String> cols = <String>{
+      for (final Row r in db.select('PRAGMA table_info(series)'))
+        r['name'] as String,
+    };
+    return cols.containsAll(_seriesColumns);
   } on Object {
     return false;
   } finally {
@@ -137,7 +148,9 @@ void buildMetadataDb(String dbPath, List<Object?> vod, List<Object?> series) {
         rating REAL,
         modified INTEGER,
         year INTEGER,
-        cover TEXT
+        cover TEXT,
+        sid INTEGER,
+        plot TEXT
       );
     ''');
 
@@ -162,6 +175,8 @@ void buildMetadataDb(String dbPath, List<Object?> vod, List<Object?> series) {
 
     final Map<String, List<num?>> agg = <String, List<num?>>{};
     final Map<String, String> covers = <String, String>{};
+    final Map<String, int> ids = <String, int>{};
+    final Map<String, String> plots = <String, String>{};
     for (final Object? o in series) {
       if (o is! Map<String, dynamic>) continue;
       final String key = matchKey((o['name'] ?? o['title'] ?? '').toString());
@@ -175,14 +190,19 @@ void buildMetadataDb(String dbPath, List<Object?> vod, List<Object?> series) {
       );
       final String? cover = _image(o['cover']);
       if (cover != null) covers.putIfAbsent(key, () => cover);
+      final int? sid = _int(o['series_id']);
+      if (sid != null) ids.putIfAbsent(key, () => sid);
+      final String plot = (o['plot'] ?? '').toString().trim();
+      if (plot.isNotEmpty) plots.putIfAbsent(key, () => plot);
     }
     final PreparedStatement isr = db.prepare(
-      'INSERT OR REPLACE INTO series(mkey, rating, modified, year, cover) '
-      'VALUES (?, ?, ?, ?, ?)',
+      'INSERT OR REPLACE INTO series'
+      '(mkey, rating, modified, year, cover, sid, plot) '
+      'VALUES (?, ?, ?, ?, ?, ?, ?)',
     );
     db.execute('BEGIN');
     agg.forEach((String k, List<num?> v) {
-      isr.execute(<Object?>[k, v[0], v[1], v[2], covers[k]]);
+      isr.execute(<Object?>[k, v[0], v[1], v[2], covers[k], ids[k], plots[k]]);
     });
     db.execute('COMMIT');
     isr.close();
@@ -211,7 +231,7 @@ Future<void> importMetadata(
     files.add(f);
     try {
       await downloadFile(
-        _apiUri(api, action).toString(),
+        apiUri(api, action).toString(),
         f,
         allowInsecure: allowInsecure,
         gate: gate,

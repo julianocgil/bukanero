@@ -12,6 +12,7 @@ import '../data/epg.dart';
 import '../data/metadata.dart';
 import '../data/profile_store.dart';
 import '../data/series_db.dart';
+import '../data/series_info.dart';
 import '../data/user_data.dart';
 import '../domain/channel.dart';
 import '../domain/profile.dart';
@@ -588,12 +589,23 @@ class _HomePageState extends State<HomePage> {
     final SeriesDb? sdb = _series;
     if (sdb == null) return;
     final String lastKey = 'last.${c.name}';
+    // Imagens e sinopses dos episódios vêm do próprio servidor da lista.
+    final (int? sid, String? plot) = sdb.seriesInfo(c.name);
+    final Profile? p = _profile;
+    final CatalogDb? db = _db;
+    final ApiAccess? api = (p == null || db == null)
+        ? null
+        : deriveApiAccess(p.url, db.sampleItemUrl());
     final Channel? ep = await showSeriesDialog(
       context,
       title: c.name,
       cover: c.logo,
       episodes: sdb.episodes(c.name),
       lastUrl: _user?.pref(lastKey),
+      plot: plot,
+      extra: (sid == null || api == null)
+          ? null
+          : fetchSeriesInfo(api, sid, allowInsecure: p!.allowInsecure),
     );
     if (ep == null || !mounted) return;
     // A série vai para os recentes e guarda o episódio, para continuar.

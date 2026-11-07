@@ -38,8 +38,6 @@ a pasta antiga `meu_iptv/` é movida para `bukanero/`.
 - Strict analysis ligado: sem `print`, aspas simples, tipos explícitos, vírgulas finais.
 
 ## Pendências conhecidas
-- Capas: tirar da fila as que saíram da tela, checagem de disco sem travar, pequeno atraso antes de baixar
-- Carrossel de episódios com imagens (get_series_info do próprio servidor)
 - Agrupar canais repetidos (HD/FHD/SD/4K, Premiere 1/2/3) no ao vivo e no guia; tentar a próxima
   versão se uma não abrir
 - Agrupar filmes repetidos (legendado/dublado/HD/outra versão); a imagem ajuda a separar versões

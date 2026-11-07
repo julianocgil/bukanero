@@ -205,7 +205,12 @@ http://s/series/u/p/4.mp4
     expect(logos(db.list('Series | A', ''))['Alfa'], 'http://s/ep/alfa1.jpg');
 
     buildMetadataDb(metaPath, <Object?>[], <Object?>[
-      <String, dynamic>{'name': 'Alfa', 'cover': 'http://s/poster/alfa.jpg'},
+      <String, dynamic>{
+        'name': 'Alfa',
+        'cover': 'http://s/poster/alfa.jpg',
+        'series_id': '77',
+        'plot': 'Sinopse fictícia.',
+      },
       // Sem pôster válido: continua a imagem do episódio.
       <String, dynamic>{'name': 'Beta', 'cover': 'sem-imagem'},
     ]);
@@ -217,6 +222,9 @@ http://s/series/u/p/4.mp4
     });
     expect(logos(db.search(''))['Alfa'], 'http://s/poster/alfa.jpg');
     expect(db.list('Series | A', '').first.rating, isNull);
+    // Id e sinopse para buscar os detalhes dos episódios.
+    expect(db.seriesInfo('Alfa'), (77, 'Sinopse fictícia.'));
+    expect(db.seriesInfo('Beta'), (null, null));
     // As imagens dos episódios continuam as próprias.
     expect(db.episodes('Alfa').map((Episode e) => e.logo), <String>[
       'http://s/ep/alfa1.jpg',
