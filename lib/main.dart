@@ -6,16 +6,16 @@ import 'ui/home_page.dart';
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
   MediaKit.ensureInitialized();
-  runApp(const MeuIptvApp());
+  runApp(const BukaneroApp());
 }
 
-class MeuIptvApp extends StatelessWidget {
-  const MeuIptvApp({super.key});
+class BukaneroApp extends StatelessWidget {
+  const BukaneroApp({super.key});
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Meu IPTV',
+      title: 'Bukanero',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(

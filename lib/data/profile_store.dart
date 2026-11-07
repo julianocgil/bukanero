@@ -14,7 +14,17 @@ Directory dataDir() {
   final String base = (xdg != null && xdg.isNotEmpty)
       ? xdg
       : '$home/.local/share';
-  final Directory d = Directory('$base/meu_iptv')..createSync(recursive: true);
+  final Directory d = Directory('$base/bukanero');
+  // O app se chamava "Meu IPTV": leva os dados da pasta antiga uma vez.
+  final Directory old = Directory('$base/meu_iptv');
+  if (!d.existsSync() && old.existsSync()) {
+    try {
+      old.renameSync(d.path);
+    } on FileSystemException {
+      // Sem conseguir mover, começa uma pasta nova; a antiga fica intacta.
+    }
+  }
+  d.createSync(recursive: true);
   try {
     Process.runSync('chmod', <String>['700', d.path]);
   } on Object {

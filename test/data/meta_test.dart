@@ -1,13 +1,13 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:meu_iptv/data/catalog_db.dart';
-import 'package:meu_iptv/data/metadata.dart';
-import 'package:meu_iptv/data/series_db.dart';
-import 'package:meu_iptv/domain/channel.dart';
-import 'package:meu_iptv/domain/section.dart';
-import 'package:meu_iptv/domain/sort_mode.dart';
-import 'package:meu_iptv/domain/stream_id.dart';
+import 'package:bukanero/data/catalog_db.dart';
+import 'package:bukanero/data/metadata.dart';
+import 'package:bukanero/data/series_db.dart';
+import 'package:bukanero/domain/channel.dart';
+import 'package:bukanero/domain/section.dart';
+import 'package:bukanero/domain/sort_mode.dart';
+import 'package:bukanero/domain/stream_id.dart';
 
 List<String> _names(List<Channel> l) => l.map((Channel c) => c.name).toList();
 
@@ -38,7 +38,7 @@ void main() {
   });
 
   test('ordenar filmes por data, nota e ano', () async {
-    final Directory dir = Directory.systemTemp.createTempSync('meuiptv');
+    final Directory dir = Directory.systemTemp.createTempSync('bukanero');
     addTearDown(() => dir.deleteSync(recursive: true));
     final File m3u = File('${dir.path}/a.m3u')
       ..writeAsStringSync('''
@@ -103,7 +103,7 @@ http://s/movie/u/p/104.mp4
   });
 
   test('ordenar séries por data, nota e ano', () async {
-    final Directory dir = Directory.systemTemp.createTempSync('meuiptv');
+    final Directory dir = Directory.systemTemp.createTempSync('bukanero');
     addTearDown(() => dir.deleteSync(recursive: true));
     final File m3u = File('${dir.path}/a.m3u')
       ..writeAsStringSync('''

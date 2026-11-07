@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:meu_iptv/domain/channel.dart';
-import 'package:meu_iptv/domain/section.dart';
+import 'package:bukanero/domain/channel.dart';
+import 'package:bukanero/domain/section.dart';
 
 Channel _c(String group, [String url = 'http://s/1']) =>
     Channel(name: 'x', url: url, group: group);

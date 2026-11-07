@@ -22,7 +22,7 @@ const List<String> _userAgents = <String>[
   'VLC/3.0.20 LibVLC/3.0.20',
   'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) '
       'Chrome/124.0 Safari/537.36',
-  'MeuIPTV/0.1',
+  'Bukanero/0.1',
 ];
 
 String _tlsMessage(TlsException e) {

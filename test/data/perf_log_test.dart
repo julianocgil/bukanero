@@ -1,7 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:meu_iptv/data/perf_log.dart';
+import 'package:bukanero/data/perf_log.dart';
 
 void main() {
   test('linha CSV só com números e hwdec limpo', () {
@@ -39,7 +39,7 @@ void main() {
   });
 
   test('arquivo novo ganha cabeçalho e o grande é trocado', () async {
-    final Directory dir = Directory.systemTemp.createTempSync('meuiptv');
+    final Directory dir = Directory.systemTemp.createTempSync('bukanero');
     addTearDown(() => dir.deleteSync(recursive: true));
     final File f = File('${dir.path}/desempenho.csv');
     final PerfLog a = PerfLog.open(f);

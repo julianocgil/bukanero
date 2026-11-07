@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:meu_iptv/data/m3u/m3u_parser.dart';
+import 'package:bukanero/data/m3u/m3u_parser.dart';
 
 void main() {
   test('lê atributos e nome', () async {

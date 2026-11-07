@@ -433,7 +433,7 @@ class _HomePageState extends State<HomePage> {
     return Scaffold(
       appBar: AppBar(
         title: Text(
-          _playing ?? 'Meu IPTV${cur == null ? '' : ' · ${cur.name}'}',
+          _playing ?? 'Bukanero${cur == null ? '' : ' · ${cur.name}'}',
         ),
         actions: <Widget>[
           IconButton(

@@ -1,12 +1,12 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:meu_iptv/data/catalog_db.dart';
-import 'package:meu_iptv/domain/section.dart';
+import 'package:bukanero/data/catalog_db.dart';
+import 'package:bukanero/domain/section.dart';
 
 void main() {
   test('busca em todas as categorias da seção', () async {
-    final Directory dir = Directory.systemTemp.createTempSync('meuiptv');
+    final Directory dir = Directory.systemTemp.createTempSync('bukanero');
     addTearDown(() => dir.deleteSync(recursive: true));
     final File m3u = File('${dir.path}/a.m3u')
       ..writeAsStringSync('''

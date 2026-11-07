@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:meu_iptv/data/epg.dart';
+import 'package:bukanero/data/epg.dart';
 
 void main() {
   test('aceita nomes variados de atributo de guia', () {

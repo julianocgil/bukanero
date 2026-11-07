@@ -1,10 +1,10 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:meu_iptv/data/catalog_db.dart';
-import 'package:meu_iptv/data/series_db.dart';
-import 'package:meu_iptv/domain/channel.dart';
-import 'package:meu_iptv/domain/series.dart';
+import 'package:bukanero/data/catalog_db.dart';
+import 'package:bukanero/data/series_db.dart';
+import 'package:bukanero/domain/channel.dart';
+import 'package:bukanero/domain/series.dart';
 
 void main() {
   test('reconhece temporada e episódio no nome', () {
@@ -18,7 +18,7 @@ void main() {
   });
 
   test('agrupa episódios em séries', () async {
-    final Directory dir = Directory.systemTemp.createTempSync('meuiptv');
+    final Directory dir = Directory.systemTemp.createTempSync('bukanero');
     addTearDown(() => dir.deleteSync(recursive: true));
     final File m3u = File('${dir.path}/a.m3u')
       ..writeAsStringSync('''

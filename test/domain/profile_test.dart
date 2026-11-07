@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:meu_iptv/domain/profile.dart';
+import 'package:bukanero/domain/profile.dart';
 
 void main() {
   test('perfil antigo (sem a opção) continua carregando', () {

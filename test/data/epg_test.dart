@@ -1,11 +1,11 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:meu_iptv/data/catalog_db.dart';
-import 'package:meu_iptv/data/epg.dart';
-import 'package:meu_iptv/data/metadata.dart';
-import 'package:meu_iptv/data/user_data.dart';
-import 'package:meu_iptv/domain/section.dart';
+import 'package:bukanero/data/catalog_db.dart';
+import 'package:bukanero/data/epg.dart';
+import 'package:bukanero/data/metadata.dart';
+import 'package:bukanero/data/user_data.dart';
+import 'package:bukanero/domain/section.dart';
 
 String _xmltv(DateTime t) {
   String two(int n) => n.toString().padLeft(2, '0');
@@ -49,7 +49,7 @@ void main() {
   });
 
   test('importa o guia e acha o programa atual', () async {
-    final Directory dir = Directory.systemTemp.createTempSync('meuiptv');
+    final Directory dir = Directory.systemTemp.createTempSync('bukanero');
     addTearDown(() => dir.deleteSync(recursive: true));
     final DateTime now = DateTime.now();
     final String past = _xmltv(now.subtract(const Duration(hours: 1)));
@@ -90,7 +90,7 @@ void main() {
   });
 
   test('sem tvg-id, liga o canal ao guia pelo nome', () async {
-    final Directory dir = Directory.systemTemp.createTempSync('meuiptv');
+    final Directory dir = Directory.systemTemp.createTempSync('bukanero');
     addTearDown(() => dir.deleteSync(recursive: true));
     final DateTime now = DateTime.now();
     final String past = _xmltv(now.subtract(const Duration(hours: 1)));
@@ -139,7 +139,7 @@ void main() {
   });
 
   test('catálogo guarda o guia do cabeçalho e exclui ocultos', () async {
-    final Directory dir = Directory.systemTemp.createTempSync('meuiptv');
+    final Directory dir = Directory.systemTemp.createTempSync('bukanero');
     addTearDown(() => dir.deleteSync(recursive: true));
     final File m3u = File('${dir.path}/a.m3u')
       ..writeAsStringSync('''
@@ -166,7 +166,7 @@ http://s/2
   });
 
   test('ocultar e reexibir', () {
-    final Directory dir = Directory.systemTemp.createTempSync('meuiptv');
+    final Directory dir = Directory.systemTemp.createTempSync('bukanero');
     addTearDown(() => dir.deleteSync(recursive: true));
     final UserData u = UserData.open('${dir.path}/u.db');
     addTearDown(u.close);

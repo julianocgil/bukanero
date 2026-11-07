@@ -1,13 +1,17 @@
-# Meu IPTV
+# Bukanero
 
 Player IPTV pessoal para Linux desktop (Flutter + media_kit), privacy-first, sem SDKs de terceiros.
+Antes se chamava "Meu IPTV"; a pasta do projeto continua `~/meu_iptv`. App id: `io.github.julianocgil.Bukanero`.
 Meta: empacotar como Flatpak. Idioma da conversa e da UI: português do Brasil.
 
 ## Estrutura
 - `lib/domain/` modelos puros (Channel, Section, Profile, series, sort_mode, stream_id)
 - `lib/data/` M3U parser, download, SQLite (catalog/series/meta/epg/user_data), cache de imagens, profile_store
-- `lib/ui/` home_page, item_views, cover_image, series_dialog, player_bar, profile_dialog
+- `lib/ui/` home_page, item_views, cover_image, series_dialog, player_bar, profile_dialog,
+  guide_page (grade do EPG), perf_monitor (FPS)
 - `test/` testes por módulo
+- `packages/media_kit_video/` cópia local do 2.0.1 com o PR media-kit#1466 (vídeo pela GPU no
+  Flutter 3.38+), via `dependency_overrides`. Remover quando a correção sair oficial.
 
 ## Comandos
 - Verificar: `flutter analyze && flutter test` (sempre rodar antes de dizer que terminou)
@@ -16,8 +20,10 @@ Meta: empacotar como Flatpak. Idioma da conversa e da UI: português do Brasil.
 - Sempre execute a partir de `~/meu_iptv`.
 
 ## Dados do usuário
-Ficam em `~/.local/share/meu_iptv/` (respeita XDG_DATA_HOME): um banco SQLite por perfil
-(catalog, series, userdata, epg, meta), cache de playlist, `img/`, `profiles.json`.
+Ficam em `~/.local/share/bukanero/` (respeita XDG_DATA_HOME): um banco SQLite por perfil
+(catalog, series, userdata, epg, meta), cache de playlist, `img/`, `profiles.json`,
+`desempenho.csv` (histórico do monitor de FPS, só números). Na primeira execução com o nome novo,
+a pasta antiga `meu_iptv/` é movida para `bukanero/`.
 
 ## Regras inegociáveis
 - NUNCA ler, imprimir, copiar ou commitar `minhalista.m3u`, qualquer `*.m3u/*.m3u8` ou `profiles.json`:
@@ -33,7 +39,8 @@ Ficam em `~/.local/share/meu_iptv/` (respeita XDG_DATA_HOME): um banco SQLite po
 
 ## Pendências conhecidas
 - Nota (rating) sobre as capas
-- Build release falhando por GTK (`libgtk-3-dev`; depois `flutter clean`)
-- EPG por nome do canal via xmltv.php do servidor (baixa prioridade)
+- Capas: tirar da fila as que saíram da tela, checagem de disco sem travar, pequeno atraso antes de baixar
+- Atualizar a lista em segundo plano, sem a tela de "Baixando e preparando"
+- Carrossel de episódios com imagens (get_series_info do próprio servidor)
 - Favoritos/continuar assistindo, atalhos de teclado, tela cheia
-- Flatpak, remoto privado no GitHub
+- Instalar fácil em outro PC (AppImage ou Flatpak), remoto privado no GitHub
