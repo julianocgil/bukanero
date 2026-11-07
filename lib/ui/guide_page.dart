@@ -11,7 +11,8 @@ import 'cover_image.dart';
 const double _rowH = 60;
 const double _chanW = 220;
 const double _headerH = 32;
-const double _pxPerMin = 4;
+// Quantas horas cabem na largura da tela; o resto fica na rolagem.
+const int _visibleHours = 3;
 const int _spanHours = 12;
 
 String _hhmm(int secs) {
@@ -64,7 +65,10 @@ class _GuidePageState extends State<_GuidePage> {
   // Começa na meia hora anterior ao "agora", arredondada.
   late final int _start = (_nowSecs() ~/ 1800) * 1800 - 1800;
   late final int _end = _start + _spanHours * 3600;
-  late final double _width = _spanHours * 60 * _pxPerMin;
+  // Pixels por minuto, calculado pela largura disponível.
+  double _px = 4;
+  double get _width => _spanHours * 60 * _px;
+  bool _placed = false;
   late final List<_GuideRow> _all = _load();
   late final List<String> _groups = _groupsOf(_all);
   late String? _group = _groups.contains(widget.initialGroup)
@@ -75,9 +79,7 @@ class _GuidePageState extends State<_GuidePage> {
   Timer? _tick;
   final ScrollController _names = ScrollController();
   final ScrollController _grid = ScrollController();
-  late final ScrollController _horiz = ScrollController(
-    initialScrollOffset: math.max(0, _x(_now) - 60 * _pxPerMin / 2),
-  );
+  final ScrollController _horiz = ScrollController();
 
   @override
   void initState() {
@@ -135,10 +137,10 @@ class _GuidePageState extends State<_GuidePage> {
     ];
   }
 
-  double _x(int secs) => (secs - _start) / 60 * _pxPerMin;
+  double _x(int secs) => (secs - _start) / 60 * _px;
 
   void _scrollBy(double minutes) {
-    final double target = (_horiz.offset + minutes * _pxPerMin).clamp(
+    final double target = (_horiz.offset + minutes * _px).clamp(
       0,
       _horiz.position.maxScrollExtent,
     );
@@ -150,7 +152,7 @@ class _GuidePageState extends State<_GuidePage> {
   }
 
   void _scrollToNow() {
-    final double target = (_x(_now) - 30 * _pxPerMin).clamp(
+    final double target = (_x(_now) - 15 * _px).clamp(
       0,
       _horiz.position.maxScrollExtent,
     );
@@ -320,6 +322,25 @@ class _GuidePageState extends State<_GuidePage> {
   }
 
   Widget _timeline(List<_GuideRow> rows) {
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints box) {
+        _px = math.max(2, box.maxWidth / (_visibleHours * 60));
+        if (!_placed) {
+          // Abre com o "agora" perto da esquerda.
+          _placed = true;
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (!_horiz.hasClients) return;
+            _horiz.jumpTo(
+              (_x(_now) - 15 * _px).clamp(0, _horiz.position.maxScrollExtent),
+            );
+          });
+        }
+        return _timelineBody(rows);
+      },
+    );
+  }
+
+  Widget _timelineBody(List<_GuideRow> rows) {
     final ThemeData t = Theme.of(context);
     final double nowX = _x(_now);
     return Scrollbar(
@@ -417,8 +438,21 @@ class _GuidePageState extends State<_GuidePage> {
           child: Tooltip(
             message: '${p.title}\n${_hhmm(p.start)}–${_hhmm(p.stop)}',
             waitDuration: const Duration(milliseconds: 600),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+            // O texto acompanha a rolagem: se o começo do programa saiu da
+            // tela, título e horário ficam grudados na borda esquerda.
+            child: ListenableBuilder(
+              listenable: _horiz,
+              builder: (BuildContext context, Widget? text) {
+                final double off = _horiz.hasClients ? _horiz.offset : 0;
+                final double shift = (off - left).clamp(
+                  0,
+                  math.max(0, width - 90),
+                );
+                return Padding(
+                  padding: EdgeInsets.fromLTRB(6 + shift, 4, 6, 4),
+                  child: text,
+                );
+              },
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisAlignment: MainAxisAlignment.center,

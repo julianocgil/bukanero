@@ -38,9 +38,10 @@ a pasta antiga `meu_iptv/` é movida para `bukanero/`.
 - Strict analysis ligado: sem `print`, aspas simples, tipos explícitos, vírgulas finais.
 
 ## Pendências conhecidas
-- Nota (rating) sobre as capas
 - Capas: tirar da fila as que saíram da tela, checagem de disco sem travar, pequeno atraso antes de baixar
-- Atualizar a lista em segundo plano, sem a tela de "Baixando e preparando"
 - Carrossel de episódios com imagens (get_series_info do próprio servidor)
-- Favoritos/continuar assistindo, atalhos de teclado, tela cheia
-- Instalar fácil em outro PC (AppImage ou Flatpak), remoto privado no GitHub
+- Agrupar canais repetidos (HD/FHD/SD/4K, Premiere 1/2/3) no ao vivo e no guia; tentar a próxima
+  versão se uma não abrir
+- Agrupar filmes repetidos (legendado/dublado/HD/outra versão); a imagem ajuda a separar versões
+- Favoritos
+- Flatpak (hoje há o .deb: `linux/packaging/build_deb.sh`; Release no GitHub privado)
