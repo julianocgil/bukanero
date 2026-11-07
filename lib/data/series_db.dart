@@ -179,6 +179,7 @@ class SeriesDb {
 
   final Database _db;
   bool _metaOn = false;
+  bool _coverOn = false;
 
   /// Ordem usada por [list] e [search].
   SortMode sort = SortMode.nameAsc;
@@ -192,8 +193,13 @@ class SeriesDb {
     try {
       _db.execute('ATTACH DATABASE ? AS mx', <Object?>[path]);
       _metaOn = true;
+      // Bancos de notas antigos não têm o pôster das séries.
+      _coverOn = _db
+          .select('PRAGMA mx.table_info(series)')
+          .any((Row r) => r['name'] == 'cover');
     } on Object {
       _metaOn = false;
+      _coverOn = false;
     }
     return _metaOn;
   }
@@ -206,12 +212,19 @@ class SeriesDb {
       // Nada a fazer: segue sem as notas.
     }
     _metaOn = false;
+    _coverOn = false;
   }
 
   SortMode get _eff => (sort.needsMeta && !_metaOn) ? SortMode.listOrder : sort;
 
-  String get _join =>
-      _eff.needsMeta ? 'LEFT JOIN mx.series m ON m.mkey = s.mkey' : '';
+  String get _join => (_eff.needsMeta || _coverOn)
+      ? 'LEFT JOIN mx.series m ON m.mkey = s.mkey'
+      : '';
+
+  /// Capa: o pôster da série vindo do servidor; sem ele, a imagem do
+  /// primeiro episódio que tem imagem.
+  String get _logo =>
+      _coverOn ? "COALESCE(NULLIF(m.cover, ''), s.logo)" : 's.logo';
 
   /// (séries no total, séries com nota), para conferir a ligação por nome.
   (int, int) metaCoverage() {
@@ -253,7 +266,7 @@ class SeriesDb {
     int limit = 2000,
   }) {
     final ResultSet rs = _db.select(
-      'SELECT s.title AS title, s.logo AS logo, s.url AS url, '
+      'SELECT s.title AS title, $_logo AS logo, s.url AS url, '
       's.episodes AS n FROM series s $_join '
       'WHERE s.grp = ? AND s.title LIKE ? ESCAPE ? '
       'ORDER BY ${_orderInGroup(_eff)} LIMIT ?',
@@ -281,7 +294,7 @@ class SeriesDb {
     int offset = 0;
     while (out.length < limit) {
       final ResultSet rs = _db.select(
-        'SELECT s.title AS title, s.grp AS grp, s.logo AS logo, '
+        'SELECT s.title AS title, s.grp AS grp, $_logo AS logo, '
         's.url AS url, SUM(s.episodes) AS n, MIN(s.pos) AS firstpos '
         'FROM series s $_join WHERE s.title LIKE ? ESCAPE ? '
         'GROUP BY s.title ORDER BY ${_orderGlobal(_eff)} LIMIT ? OFFSET ?',

@@ -88,14 +88,38 @@ num? _max(num? a, num? b) {
   return a > b ? a : b;
 }
 
+/// Endereço http(s) de imagem vindo da API, ou null.
+String? _image(Object? v) {
+  if (v == null) return null;
+  final String t = v.toString().trim();
+  return (t.startsWith('http://') || t.startsWith('https://')) ? t : null;
+}
+
+/// Bancos gravados antes do pôster das séries não têm a coluna `cover`.
+bool _hasSeriesCover(String dbPath) {
+  Database? db;
+  try {
+    db = sqlite3.open(dbPath, mode: OpenMode.readOnly);
+    return db
+        .select('PRAGMA table_info(series)')
+        .any((Row r) => r['name'] == 'cover');
+  } on Object {
+    return false;
+  } finally {
+    db?.close();
+  }
+}
+
 bool metaIsFresh(String dbPath, {Duration maxAge = const Duration(hours: 24)}) {
   final File f = File(dbPath);
   return f.existsSync() &&
-      DateTime.now().difference(f.lastModifiedSync()) < maxAge;
+      DateTime.now().difference(f.lastModifiedSync()) < maxAge &&
+      _hasSeriesCover(dbPath);
 }
 
-/// Grava nota, data e ano num banco novo. As séries são ligadas pelo nome
-/// (sem acentos e pontuação); se houver nomes repetidos, vale o maior valor.
+/// Grava nota, data e ano num banco novo, e o pôster das séries. As séries
+/// são ligadas pelo nome (sem acentos e pontuação); se houver nomes
+/// repetidos, vale o maior valor e o primeiro pôster.
 void buildMetadataDb(String dbPath, List<Object?> vod, List<Object?> series) {
   final File tmp = File('$dbPath.tmp');
   if (tmp.existsSync()) tmp.deleteSync();
@@ -112,7 +136,8 @@ void buildMetadataDb(String dbPath, List<Object?> vod, List<Object?> series) {
         mkey TEXT PRIMARY KEY,
         rating REAL,
         modified INTEGER,
-        year INTEGER
+        year INTEGER,
+        cover TEXT
       );
     ''');
 
@@ -136,6 +161,7 @@ void buildMetadataDb(String dbPath, List<Object?> vod, List<Object?> series) {
     iv.close();
 
     final Map<String, List<num?>> agg = <String, List<num?>>{};
+    final Map<String, String> covers = <String, String>{};
     for (final Object? o in series) {
       if (o is! Map<String, dynamic>) continue;
       final String key = matchKey((o['name'] ?? o['title'] ?? '').toString());
@@ -147,14 +173,16 @@ void buildMetadataDb(String dbPath, List<Object?> vod, List<Object?> series) {
         cur[2],
         _year(o['year'] ?? o['releaseDate'] ?? o['release_date']),
       );
+      final String? cover = _image(o['cover']);
+      if (cover != null) covers.putIfAbsent(key, () => cover);
     }
     final PreparedStatement isr = db.prepare(
-      'INSERT OR REPLACE INTO series(mkey, rating, modified, year) '
-      'VALUES (?, ?, ?, ?)',
+      'INSERT OR REPLACE INTO series(mkey, rating, modified, year, cover) '
+      'VALUES (?, ?, ?, ?, ?)',
     );
     db.execute('BEGIN');
     agg.forEach((String k, List<num?> v) {
-      isr.execute(<Object?>[k, v[0], v[1], v[2]]);
+      isr.execute(<Object?>[k, v[0], v[1], v[2], covers[k]]);
     });
     db.execute('COMMIT');
     isr.close();

@@ -1,11 +1,13 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:sqlite3/sqlite3.dart';
 import 'package:bukanero/data/catalog_db.dart';
 import 'package:bukanero/data/metadata.dart';
 import 'package:bukanero/data/series_db.dart';
 import 'package:bukanero/domain/channel.dart';
 import 'package:bukanero/domain/section.dart';
+import 'package:bukanero/domain/series.dart';
 import 'package:bukanero/domain/sort_mode.dart';
 import 'package:bukanero/domain/stream_id.dart';
 
@@ -160,5 +162,67 @@ http://s/series/u/p/6.mp4
     expect(_names(db.search('')), <String>['Zeta', 'Alfa', 'Mike']);
     db.sort = SortMode.recent;
     expect(_names(db.search('')), <String>['Alfa', 'Zeta', 'Mike']);
+  });
+
+  test('capa da série é o pôster do servidor, não o 1º episódio', () async {
+    final Directory dir = Directory.systemTemp.createTempSync('bukanero');
+    addTearDown(() => dir.deleteSync(recursive: true));
+    final File m3u = File('${dir.path}/a.m3u')
+      ..writeAsStringSync('''
+#EXTM3U
+#EXTINF:-1 tvg-logo="http://s/ep/alfa1.jpg" group-title="Series | A",Alfa S01E01
+http://s/series/u/p/1.mp4
+#EXTINF:-1 tvg-logo="http://s/ep/alfa2.jpg" group-title="Series | A",Alfa S01E02
+http://s/series/u/p/2.mp4
+#EXTINF:-1 tvg-logo="http://s/ep/beta1.jpg" group-title="Series | A",Beta S01E01
+http://s/series/u/p/3.mp4
+#EXTINF:-1 tvg-logo="http://s/ep/beta2.jpg" group-title="Series | A",Beta S01E02
+http://s/series/u/p/4.mp4
+''');
+    final String catPath = '${dir.path}/c.db';
+    final String serPath = '${dir.path}/s.db';
+    final String metaPath = '${dir.path}/m.db';
+    await importCatalog(m3u.path, catPath);
+    await ensureSeriesIndex(catPath, serPath);
+    final SeriesDb db = SeriesDb.open(serPath);
+    addTearDown(db.close);
+
+    Map<String, String?> logos(List<Channel> l) => <String, String?>{
+      for (final Channel c in l) c.name: c.logo,
+    };
+
+    // Sem notas: fica a imagem do primeiro episódio.
+    expect(logos(db.list('Series | A', ''))['Alfa'], 'http://s/ep/alfa1.jpg');
+
+    buildMetadataDb(metaPath, <Object?>[], <Object?>[
+      <String, dynamic>{'name': 'Alfa', 'cover': 'http://s/poster/alfa.jpg'},
+      // Sem pôster válido: continua a imagem do episódio.
+      <String, dynamic>{'name': 'Beta', 'cover': 'sem-imagem'},
+    ]);
+    expect(metaIsFresh(metaPath), isTrue);
+    expect(db.attachMeta(metaPath), isTrue);
+    expect(logos(db.list('Series | A', '')), <String, String?>{
+      'Alfa': 'http://s/poster/alfa.jpg',
+      'Beta': 'http://s/ep/beta1.jpg',
+    });
+    expect(logos(db.search(''))['Alfa'], 'http://s/poster/alfa.jpg');
+    // As imagens dos episódios continuam as próprias.
+    expect(db.episodes('Alfa').map((Episode e) => e.logo), <String>[
+      'http://s/ep/alfa1.jpg',
+      'http://s/ep/alfa2.jpg',
+    ]);
+  });
+
+  test('banco de notas antigo, sem pôster, conta como velho', () {
+    final Directory dir = Directory.systemTemp.createTempSync('bukanero');
+    addTearDown(() => dir.deleteSync(recursive: true));
+    final String metaPath = '${dir.path}/m.db';
+    final Database old = sqlite3.open(metaPath)
+      ..execute(
+        'CREATE TABLE series(mkey TEXT PRIMARY KEY, rating REAL, '
+        'modified INTEGER, year INTEGER)',
+      );
+    old.close();
+    expect(metaIsFresh(metaPath), isFalse);
   });
 }
