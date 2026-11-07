@@ -88,6 +88,12 @@ String epgDbPath(Profile p) => '${dataDir().path}/epg_${p.id}.db';
 
 Directory? _imgDir;
 
+/// Só para testes: usa [d] como pasta de dados (nunca a do usuário).
+void useDataDirForTest(Directory d) {
+  _cached = d;
+  _imgDir = null;
+}
+
 Directory imageCacheDir() =>
     _imgDir ??= Directory('${dataDir().path}/img')..createSync(recursive: true);
 

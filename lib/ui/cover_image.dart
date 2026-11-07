@@ -61,8 +61,18 @@ class _CoverImageState extends State<CoverImage> {
       _loading = false;
       return;
     }
+    final File? known = force ? null : knownCachedImage(u);
+    if (known != null) {
+      _file = known;
+      _loading = false;
+      return;
+    }
     _loading = true;
-    cachedImage(u, force: force).then((File? f) async {
+    cachedImage(
+      u,
+      force: force,
+      stillWanted: () => mounted && gen == _gen,
+    ).then((File? f) async {
       if (!mounted || gen != _gen) return;
       if (f == null && attempt < 1) {
         // Uma segunda chance, para falhas passageiras de rede.
