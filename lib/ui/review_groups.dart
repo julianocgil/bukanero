@@ -67,7 +67,6 @@ class _ReviewDialogState extends State<_ReviewDialog> {
                 prefixIcon: Icon(Icons.search),
                 hintText: 'Procurar grupo',
                 isDense: true,
-                border: OutlineInputBorder(),
               ),
               onChanged: (String v) => setState(() => _query = v),
             ),

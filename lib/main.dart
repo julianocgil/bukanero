@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:media_kit/media_kit.dart';
 
+import 'ui/app_theme.dart';
 import 'ui/home_page.dart';
 
 void main() {
@@ -17,13 +18,7 @@ class BukaneroApp extends StatelessWidget {
     return MaterialApp(
       title: 'Bukanero',
       debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: Colors.indigo,
-          brightness: Brightness.dark,
-        ),
-        useMaterial3: true,
-      ),
+      theme: bukaneroDarkTheme(),
       home: const HomePage(),
     );
   }

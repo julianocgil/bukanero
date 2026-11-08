@@ -213,7 +213,6 @@ class _CategoryPanelState extends State<_CategoryPanel> {
                       prefixIcon: Icon(Icons.search),
                       hintText: 'Procurar categoria',
                       isDense: true,
-                      border: OutlineInputBorder(),
                     ),
                     onChanged: (String v) => setState(() => _query = v),
                     // Enter escolhe a primeira categoria encontrada.

@@ -43,3 +43,7 @@ a pasta antiga `meu_iptv/` é movida para `bukanero/`.
 - Ordem automática por resolução medida no player (hoje: marca mais frequente + tabela de qualidade)
 - EPG por nome do canal: revisar canais regionais sem guia próprio
 - Flatpak (hoje há o .deb: `linux/packaging/build_deb.sh`; Release no GitHub privado)
+- PC antigo (Intel HD 4000) lento em 4K: rodar `vainfo` lá e mandar o desempenho.csv; provável falta do
+  driver `i965-va-driver` (a HD 4000 não usa o intel-media-va-driver) e HEVC 4K sem decodificação na placa.
+  Acrescentar `i965-va-driver` nas recomendações do .deb
+- Fonte embutida (OFL: Nunito/Inter/Figtree) — combinar o download dos arquivos antes

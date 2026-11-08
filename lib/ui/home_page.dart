@@ -27,6 +27,7 @@ import 'item_views.dart';
 import 'perf_monitor.dart';
 import 'player_view.dart';
 import 'review_groups.dart';
+import 'section_switch.dart';
 import 'video_health.dart';
 import 'profile_dialog.dart';
 import 'series_dialog.dart';
@@ -1134,11 +1135,6 @@ class _HomePageState extends State<HomePage> {
             },
           ),
           IconButton(
-            tooltip: 'Guia de programação: todos os canais',
-            icon: const Icon(Icons.view_timeline_outlined),
-            onPressed: _epg == null ? null : _openGuide,
-          ),
-          IconButton(
             tooltip: 'Atualizar o guia de programação (EPG)',
             icon: const Icon(Icons.event_note),
             onPressed: (cur == null || _epgBusy)
@@ -1469,28 +1465,10 @@ class _HomePageState extends State<HomePage> {
   }
 
   Widget _sectionPicker() {
-    return SegmentedButton<Section>(
-      showSelectedIcon: false,
-      segments: const <ButtonSegment<Section>>[
-        ButtonSegment<Section>(
-          value: Section.live,
-          icon: Icon(Icons.live_tv),
-          tooltip: 'Ao vivo',
-        ),
-        ButtonSegment<Section>(
-          value: Section.movies,
-          icon: Icon(Icons.movie_outlined),
-          tooltip: 'Filmes',
-        ),
-        ButtonSegment<Section>(
-          value: Section.series,
-          icon: Icon(Icons.video_library_outlined),
-          tooltip: 'Séries',
-        ),
-      ],
-      selected: <Section>{_section},
-      onSelectionChanged: (Set<Section> s) => setState(() {
-        _section = s.first;
+    return SectionSwitch(
+      selected: _section,
+      onChanged: (Section s) => setState(() {
+        _section = s;
         _group = null;
         _setQuery('');
       }),
@@ -1646,15 +1624,43 @@ class _HomePageState extends State<HomePage> {
         ),
         Padding(
           padding: const EdgeInsets.all(8),
-          child: TextField(
-            controller: _searchCtl,
-            decoration: const InputDecoration(
-              prefixIcon: Icon(Icons.search),
-              hintText: 'Buscar pelo nome',
-              isDense: true,
-              border: OutlineInputBorder(),
-            ),
-            onChanged: _onQuery,
+          child: Row(
+            children: <Widget>[
+              Expanded(
+                // O X aparece só quando há texto, e limpa a busca.
+                child: ValueListenableBuilder<TextEditingValue>(
+                  valueListenable: _searchCtl,
+                  builder:
+                      (BuildContext context, TextEditingValue v, Widget? _) =>
+                          TextField(
+                            controller: _searchCtl,
+                            decoration: InputDecoration(
+                              prefixIcon: const Icon(Icons.search),
+                              hintText: 'Buscar pelo nome',
+                              isDense: true,
+                              suffixIcon: v.text.isEmpty
+                                  ? null
+                                  : IconButton(
+                                      tooltip: 'Limpar a busca',
+                                      icon: const Icon(Icons.close),
+                                      onPressed: () =>
+                                          setState(() => _setQuery('')),
+                                    ),
+                            ),
+                            onChanged: _onQuery,
+                          ),
+                ),
+              ),
+              // O guia fica junto dos canais.
+              if (live) ...<Widget>[
+                const SizedBox(width: 8),
+                IconButton.filledTonal(
+                  tooltip: 'Guia de programação',
+                  icon: const Icon(Icons.view_timeline_outlined),
+                  onPressed: _epg == null ? null : _openGuide,
+                ),
+              ],
+            ],
           ),
         ),
         Expanded(child: body),

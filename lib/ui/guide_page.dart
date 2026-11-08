@@ -221,7 +221,6 @@ class _GuidePageState extends State<_GuidePage> {
                 prefixIcon: Icon(Icons.search),
                 hintText: 'Canal ou programa',
                 isDense: true,
-                border: OutlineInputBorder(),
               ),
               onChanged: (String v) => setState(() => _query = v),
             ),
