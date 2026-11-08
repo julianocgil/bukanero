@@ -30,7 +30,7 @@ Architecture: $ARCH
 Maintainer: Juliano <julianocgil@users.noreply.github.com>
 Installed-Size: $SIZE
 Depends: libc6, libstdc++6, libgcc-s1, libglib2.0-0t64, libgtk-3-0t64, libepoxy0, libegl1, libmpv2
-Recommends: mesa-va-drivers
+Recommends: mesa-va-drivers, i965-va-driver | intel-media-va-driver
 Section: video
 Priority: optional
 Description: Player IPTV pessoal para Linux

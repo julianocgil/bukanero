@@ -46,5 +46,5 @@ a pasta antiga `meu_iptv/` é movida para `bukanero/`.
 - Flatpak (hoje há o .deb: `linux/packaging/build_deb.sh`; Release no GitHub privado)
 - PC antigo (Intel HD 4000) lento em 4K: rodar `vainfo` lá e mandar o desempenho.csv; provável falta do
   driver `i965-va-driver` (a HD 4000 não usa o intel-media-va-driver) e HEVC 4K sem decodificação na placa.
-  Acrescentar `i965-va-driver` nas recomendações do .deb
+  (O .deb 0.4.0 já recomenda `i965-va-driver`.)
 - Fonte embutida (OFL: Nunito/Inter/Figtree) — combinar o download dos arquivos antes
