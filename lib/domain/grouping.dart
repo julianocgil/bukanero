@@ -152,6 +152,8 @@ GroupingResult groupItems(List<GroupItem> items, {required bool movies}) {
     for (final MapEntry<String, Set<String>> e in firstWords.entries)
       if (e.value.length >= 3) e.key,
   };
+  // (Depois de aprender as palavras de versão, a regra fica mais rígida:
+  // veja "imagem genérica pelos títulos" abaixo.)
   bool goodLogo(String? l) => l != null && l.isNotEmpty && !generic.contains(l);
 
   // 2. Palavras de versão: o que sobra ao comparar nomes com a mesma imagem
@@ -208,6 +210,23 @@ GroupingResult groupItems(List<GroupItem> items, {required bool movies}) {
   };
   for (final _Prepared p in ps) {
     p.core = p.words.where((String w) => !variants.contains(w)).toList();
+  }
+
+  // Imagem genérica pelos títulos: a mesma imagem em 3+ títulos diferentes
+  // (sem as palavras de versão e sem o número do fim) também é genérica,
+  // mesmo que todos comecem igual ("[24H] ...", "BR | ..."). A primeira
+  // regra, pela palavra inicial, não pega esse caso.
+  final Map<String, Set<String>> titles = <String, Set<String>>{};
+  for (final _Prepared p in ps) {
+    final String? l = p.item.logo;
+    if (l == null || l.isEmpty || p.core.isEmpty) continue;
+    final List<String> t = _isNumber(p.core.last)
+        ? p.core.sublist(0, p.core.length - 1)
+        : p.core;
+    (titles[l] ??= <String>{}).add('${t.join(' ')}|${p.year ?? ''}');
+  }
+  for (final MapEntry<String, Set<String>> e in titles.entries) {
+    if (e.value.length >= 3) generic.add(e.key);
   }
 
   // 3. Ligações. Sinais que se contradizem (guia ou TMDB diferentes)
@@ -301,36 +320,48 @@ GroupingResult groupItems(List<GroupItem> items, {required bool movies}) {
     clean.addAll(_splitConflicts(g, ps, movies));
   }
 
+  // 5. Famílias (só canais): mesmo nome tirando o número do fim e a mesma
+  // imagem boa. Vale também para canais que existem uma vez só por número
+  // ("Pack 01", "Pack 02"...), não só para grupos com versões.
+  final Map<String, List<int>> byFamily = <String, List<int>>{};
+  if (!movies) {
+    for (int ui = 0; ui < clean.length; ui++) {
+      final _Prepared p = ps[clean[ui].first];
+      if (p.core.length < 2 || !_isNumber(p.core.last)) continue;
+      // Aqui vale até imagem genérica: o título igual já é exigido, e a
+      // família só junta números para você escolher.
+      final String? logo = p.item.logo;
+      if (logo == null || logo.isEmpty) continue;
+      final String k =
+          '${p.core.sublist(0, p.core.length - 1).join(' ')}|${p.item.logo}';
+      (byFamily[k] ??= <int>[]).add(ui);
+    }
+  }
+  final Set<int> inFamily = <int>{
+    for (final List<int> f in byFamily.values)
+      if (f.length >= 2) ...f,
+  };
+
   final List<ItemGroup> groups = <ItemGroup>[];
-  final List<List<int>> members = <List<int>>[];
-  for (final List<int> g in clean) {
-    if (g.length < 2) continue;
+  final Map<int, int> groupOfUnit = <int, int>{};
+  for (int ui = 0; ui < clean.length; ui++) {
+    final List<int> g = clean[ui];
+    // Um item sozinho só entra se faz parte de uma família.
+    if (g.length < 2 && !inFamily.contains(ui)) continue;
     final List<int> ids = <int>[for (final int i in g) ps[i].item.id];
+    groupOfUnit[ui] = groups.length;
     groups.add(
       ItemGroup(ids, <String>{
         for (final int i in g) ...why[i],
+        if (g.length < 2) 'família numerada',
       }, strong: g.any((int i) => strong[i])),
     );
-    members.add(g);
   }
-
-  // 5. Famílias (só canais): mesmo nome tirando o número do fim e a mesma
-  // imagem boa.
-  final List<ItemFamily> families = <ItemFamily>[];
-  if (!movies) {
-    final Map<String, List<int>> byFamily = <String, List<int>>{};
-    for (int gi = 0; gi < members.length; gi++) {
-      final _Prepared p = ps[members[gi].first];
-      if (p.core.length < 2 || !_isNumber(p.core.last)) continue;
-      if (!goodLogo(p.item.logo)) continue;
-      final String k =
-          '${p.core.sublist(0, p.core.length - 1).join(' ')}|${p.item.logo}';
-      (byFamily[k] ??= <int>[]).add(gi);
-    }
-    for (final List<int> f in byFamily.values) {
-      if (f.length >= 2) families.add(ItemFamily(f));
-    }
-  }
+  final List<ItemFamily> families = <ItemFamily>[
+    for (final List<int> f in byFamily.values)
+      if (f.length >= 2)
+        ItemFamily(<int>[for (final int ui in f) groupOfUnit[ui]!]),
+  ];
 
   return GroupingResult(
     groups: groups,
@@ -397,13 +428,24 @@ class CardMember {
 
 /// Um cartão: o nome limpo e as versões, da melhor para a pior.
 class GroupCard {
-  const GroupCard(this.name, this.members, this.key);
+  const GroupCard(
+    this.name,
+    this.members,
+    this.key, {
+    this.strong = false,
+    this.reasons = const <String>{},
+  });
 
   final String name;
   final List<CardMember> members;
 
   /// Identifica o cartão entre importações (para "Separar este grupo").
   final String key;
+
+  /// Juntado por sinal forte (independente do nome): quase nunca erra. Os
+  /// outros (só nome e imagem) são os que vale a pena revisar.
+  final bool strong;
+  final Set<String> reasons;
 }
 
 // Ordem de preferência para tocar: FHD, depois HD/sem marca, SD, e por
@@ -444,6 +486,8 @@ String cleanCardName(String name, Set<String> drop) {
   return s
       .replaceAll(RegExp(r'[\[({]\s*[\])}]'), ' ')
       .replaceAll(RegExp(r'\s+'), ' ')
+      .replaceAllMapped(RegExp(r'\s+([\])}])'), (Match m) => m[1]!)
+      .replaceAllMapped(RegExp(r'([\[({])\s+'), (Match m) => m[1]!)
       .replaceAll(RegExp(r'^[\s\-|:.]+|[\s\-|:.]+$'), '')
       .trim();
 }
@@ -458,15 +502,24 @@ List<GroupCard> buildCards(List<GroupItem> items, GroupingResult r) {
   final List<List<int>> merged = <List<int>>[];
   final Set<int> inFamily = <int>{};
   final List<bool> familyCard = <bool>[];
+  final List<bool> cardStrong = <bool>[];
+  final List<Set<String>> cardReasons = <Set<String>>[];
   for (final ItemFamily f in r.families) {
     merged.add(<int>[for (final int gi in f.groups) ...r.groups[gi].ids]);
     familyCard.add(true);
+    cardStrong.add(f.groups.every((int gi) => r.groups[gi].strong));
+    cardReasons.add(<String>{
+      'mesmo nome com número',
+      for (final int gi in f.groups) ...r.groups[gi].reasons,
+    });
     inFamily.addAll(f.groups);
   }
   for (int gi = 0; gi < r.groups.length; gi++) {
     if (inFamily.contains(gi)) continue;
     merged.add(r.groups[gi].ids);
     familyCard.add(false);
+    cardStrong.add(r.groups[gi].strong);
+    cardReasons.add(r.groups[gi].reasons);
   }
 
   // 1ª passada: as versões de cada cartão, com a marca e a qualidade.
@@ -536,7 +589,13 @@ List<GroupCard> buildCards(List<GroupItem> items, GroupingResult r) {
       for (final CardMember m in members) byId[m.id]!.name,
     ]..sort();
     cards.add(
-      GroupCard(name.isEmpty ? best.name : name, members, names.join('\u0001')),
+      GroupCard(
+        name.isEmpty ? best.name : name,
+        members,
+        names.join('\u0001'),
+        strong: cardStrong[c],
+        reasons: cardReasons[c]..remove('família numerada'),
+      ),
     );
   }
   return cards;

@@ -26,6 +26,7 @@ import 'guide_page.dart';
 import 'item_views.dart';
 import 'perf_monitor.dart';
 import 'player_view.dart';
+import 'review_groups.dart';
 import 'video_health.dart';
 import 'profile_dialog.dart';
 import 'series_dialog.dart';
@@ -228,6 +229,24 @@ class _HomePageState extends State<HomePage> {
           );
         },
       ),
+    );
+  }
+
+  Future<void> _reviewGroups() async {
+    final GroupIndex? gi = _groups;
+    if (gi == null) return;
+    await showReviewGroups(
+      context,
+      groups: gi.toReview(_section),
+      isSeparated: _separated.contains,
+      onSet: (String key, {required bool separated}) {
+        _user?.setSeparated(key, separated: separated);
+        setState(() {
+          _separated = separated
+              ? <String>{..._separated, key}
+              : (<String>{..._separated}..remove(key));
+        });
+      },
     );
   }
 
@@ -1409,7 +1428,11 @@ class _HomePageState extends State<HomePage> {
       ),
       onSelected: (Object v) => v is SortMode
           ? _setSort(v)
-          : (v == 'separated' ? _showSeparated() : _toggleGrouping()),
+          : switch (v) {
+              'separated' => _showSeparated(),
+              'review' => _reviewGroups(),
+              _ => _toggleGrouping(),
+            },
       itemBuilder: (BuildContext context) => <PopupMenuEntry<Object>>[
         if (_section != Section.series) ...<PopupMenuEntry<Object>>[
           CheckedPopupMenuItem<Object>(
@@ -1417,6 +1440,11 @@ class _HomePageState extends State<HomePage> {
             checked: _grouping,
             child: const Text('Agrupar versões repetidas'),
           ),
+          if (_grouping && _groups != null)
+            const PopupMenuItem<Object>(
+              value: 'review',
+              child: Text('Revisar agrupamentos…'),
+            ),
           if (_separated.isNotEmpty)
             PopupMenuItem<Object>(
               value: 'separated',
@@ -1479,6 +1507,9 @@ class _HomePageState extends State<HomePage> {
     final bool live = _section == Section.live;
     final int now = DateTime.now().millisecondsSinceEpoch ~/ 1000;
     final Set<String> favs = _user?.favorites(_section) ?? const <String>{};
+    // Trocar de seção ou categoria cria uma lista nova: a rolagem volta ao
+    // começo em vez de continuar no fim da categoria anterior.
+    final Key listKey = ValueKey<String>('${_section.name}|$_group');
     Widget liveTile(BuildContext context, int i) {
       final Channel c = items[i];
       final bool hidden = _isHidden(c, hiddenItems);
@@ -1506,10 +1537,15 @@ class _HomePageState extends State<HomePage> {
     if (items.isEmpty) {
       body = const Center(child: Text('Nada por aqui'));
     } else if (live && !_wide) {
-      body = ListView.builder(itemCount: items.length, itemBuilder: liveTile);
+      body = ListView.builder(
+        key: listKey,
+        itemCount: items.length,
+        itemBuilder: liveTile,
+      );
     } else if (live) {
       // Ampliada: canais em colunas.
       body = GridView.builder(
+        key: listKey,
         padding: const EdgeInsets.symmetric(horizontal: 4),
         gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
           maxCrossAxisExtent: 420,
@@ -1523,6 +1559,7 @@ class _HomePageState extends State<HomePage> {
           ? (_user?.recent(_section) ?? const <Channel>[])
           : const <Channel>[];
       body = CustomScrollView(
+        key: listKey,
         slivers: <Widget>[
           if (recent.isNotEmpty)
             SliverPadding(

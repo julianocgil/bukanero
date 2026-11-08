@@ -10,7 +10,7 @@ import '../domain/stream_id.dart';
 import 'epg.dart';
 
 // Mude ao alterar as regras do agrupamento: força recalcular.
-const int _version = 3;
+const int _version = 5;
 
 String _stamp(String catalogPath, String? epgPath, String? metaPath) {
   String mtime(String? p) => (p != null && File(p).existsSync())
@@ -95,7 +95,9 @@ void _build(
         id INTEGER PRIMARY KEY,
         section INTEGER NOT NULL,
         name TEXT NOT NULL,
-        key TEXT NOT NULL
+        key TEXT NOT NULL,
+        strong INTEGER NOT NULL,
+        reasons TEXT NOT NULL
       );
       CREATE TABLE member(
         item_id INTEGER PRIMARY KEY,
@@ -107,7 +109,8 @@ void _build(
       CREATE TABLE meta(key TEXT PRIMARY KEY, value TEXT);
     ''');
     final PreparedStatement insCard = out.prepare(
-      'INSERT INTO card(id, section, name, key) VALUES (?, ?, ?, ?)',
+      'INSERT INTO card(id, section, name, key, strong, reasons) '
+      'VALUES (?, ?, ?, ?, ?, ?)',
     );
     final PreparedStatement insMember = out.prepare(
       'INSERT INTO member(item_id, card, label, mark, rank) '
@@ -127,7 +130,14 @@ void _build(
       final GroupingResult res = groupItems(items, movies: movies);
       for (final GroupCard c in buildCards(items, res)) {
         final int id = nextCard++;
-        insCard.execute(<Object?>[id, s.index, c.name, c.key]);
+        insCard.execute(<Object?>[
+          id,
+          s.index,
+          c.name,
+          c.key,
+          if (c.strong) 1 else 0,
+          (c.reasons.toList()..sort()).join(', '),
+        ]);
         for (final CardMember m in c.members) {
           insMember.execute(<Object?>[m.id, id, m.label, m.mark, m.rank]);
         }
@@ -183,6 +193,33 @@ class GroupIndex {
   }
 
   final Map<int, List<int>> _byCard = <int, List<int>>{};
+  final Map<int, _CardInfo> _info = <int, _CardInfo>{};
+
+  /// Grupos para revisar na seção: os juntados só por nome e imagem (sem
+  /// sinal forte). Os juntados só pelo nome, sem a mesma imagem, vêm antes;
+  /// depois, os maiores.
+  List<GroupReview> toReview(Section s) {
+    final List<GroupReview> out = <GroupReview>[];
+    for (final MapEntry<int, _CardInfo> e in _info.entries) {
+      if (e.value.section != s.index || e.value.strong) continue;
+      final List<GroupRef> refs = <GroupRef>[
+        for (final int id in _byCard[e.key] ?? const <int>[]) members[id]!,
+      ]..sort((GroupRef a, GroupRef b) => a.rank.compareTo(b.rank));
+      out.add(
+        GroupReview(keys[e.key]!, names[e.key]!, e.value.reasons, <String>[
+          for (final GroupRef g in refs) g.label,
+        ]),
+      );
+    }
+    int risk(GroupReview g) => g.reasons.contains('imagem') ? 0 : 1;
+    out.sort((GroupReview a, GroupReview b) {
+      final int r = risk(b).compareTo(risk(a));
+      if (r != 0) return r;
+      final int n = b.labels.length.compareTo(a.labels.length);
+      return n != 0 ? n : a.name.compareTo(b.name);
+    });
+    return out;
+  }
 
   static GroupIndex? tryOpen(String path) {
     if (!File(path).existsSync()) return null;
@@ -200,11 +237,20 @@ class GroupIndex {
         };
         final Map<int, String> names = <int, String>{};
         final Map<int, String> keys = <int, String>{};
-        for (final Row r in db.select('SELECT id, name, key FROM card')) {
-          names[r['id'] as int] = r['name'] as String;
-          keys[r['id'] as int] = r['key'] as String;
+        final Map<int, _CardInfo> info = <int, _CardInfo>{};
+        for (final Row r in db.select(
+          'SELECT id, section, name, key, strong, reasons FROM card',
+        )) {
+          final int id = r['id'] as int;
+          names[id] = r['name'] as String;
+          keys[id] = r['key'] as String;
+          info[id] = _CardInfo(
+            r['section'] as int,
+            (r['strong'] as int) == 1,
+            r['reasons'] as String,
+          );
         }
-        return GroupIndex._(members, names, keys);
+        return GroupIndex._(members, names, keys).._info.addAll(info);
       } finally {
         db.close();
       }
@@ -325,4 +371,22 @@ class GroupIndex {
       groupKey: keys[card],
     );
   }
+}
+
+class _CardInfo {
+  const _CardInfo(this.section, this.strong, this.reasons);
+
+  final int section;
+  final bool strong;
+  final String reasons;
+}
+
+/// Um grupo para o usuário revisar: nome, motivo e as versões.
+class GroupReview {
+  const GroupReview(this.key, this.name, this.reasons, this.labels);
+
+  final String key;
+  final String name;
+  final String reasons;
+  final List<String> labels;
 }

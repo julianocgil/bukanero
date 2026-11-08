@@ -75,6 +75,37 @@ void main() {
     ]);
   });
 
+  test('canais numerados sem versões também viram família', () {
+    final List<GroupItem> items = _items(<(String, String?)>[
+      ('[24H] Show [Pack 01]', 's'),
+      ('[24H] Show [Pack 02]', 's'),
+      ('[24H] Show [Pack 03]', 's'),
+      ('[24H] Outro [Pack 01]', 'o'),
+    ]);
+    final GroupingResult r = groupItems(items, movies: false);
+    final List<GroupCard> cards = buildCards(items, r);
+    expect(cards, hasLength(1));
+    expect(cards.single.name, '[24H] Show [Pack]');
+    expect(cards.single.members.map((CardMember m) => m.label), <String>[
+      '01',
+      '02',
+      '03',
+    ]);
+  });
+
+  test('imagem genérica mesmo com prefixo comum ("[24H] ...")', () {
+    // Todos começam com "[24H]", mas são títulos diferentes com a mesma
+    // imagem: a imagem é genérica e não vale como sinal.
+    final List<GroupItem> items = _items(<(String, String?)>[
+      ('[24H] Alfa', 'g'),
+      ('[24H] Beta', 'g'),
+      ('[24H] Gama', 'g'),
+    ]);
+    final GroupingResult r = groupItems(items, movies: true);
+    expect(r.genericLogos, contains('g'));
+    expect(r.groups, isEmpty);
+  });
+
   test('imagem genérica não junta nomes diferentes', () {
     final List<GroupItem> items = _items(<(String, String?)>[
       ('Alfa', 'gen'),

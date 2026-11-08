@@ -70,5 +70,14 @@ http://s/movie/u/p/6.mp4
     expect(gi.separatedKey(apart.first, sep), cards.first.groupKey);
     expect(gi.separatedKey(apart.first, <String>{}), isNull);
     expect(gi.nameOfKey(cards.first.groupKey!), 'Aventura');
+    // Juntados só por nome e imagem: aparecem para revisar.
+    final List<GroupReview> review = gi.toReview(Section.movies);
+    expect(review.map((GroupReview g) => g.name), <String>[
+      'Aventura',
+      'Busca',
+      'Cidade',
+    ]);
+    expect(review.first.reasons, contains('imagem'));
+    expect(review.first.labels, <String>['Padrão', 'LEGENDADO']);
   });
 }
