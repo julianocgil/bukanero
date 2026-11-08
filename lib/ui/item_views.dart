@@ -330,6 +330,7 @@ class PosterCard extends StatelessWidget {
     this.favorite = false,
     this.onToggleFavorite,
     this.onRegroup,
+    this.onDoubleTap,
     super.key,
   });
 
@@ -338,6 +339,9 @@ class PosterCard extends StatelessWidget {
   final bool hidden;
   final bool favorite;
   final VoidCallback? onRegroup;
+
+  /// Duplo clique (filmes: toca direto, sem abrir os detalhes).
+  final VoidCallback? onDoubleTap;
   final VoidCallback? onToggleFavorite;
   final VoidCallback onTap;
   final VoidCallback onToggleHidden;
@@ -368,6 +372,7 @@ class PosterCard extends StatelessWidget {
         ),
         child: InkWell(
           onTap: onTap,
+          onDoubleTap: onDoubleTap,
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: <Widget>[

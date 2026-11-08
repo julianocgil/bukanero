@@ -134,3 +134,78 @@ Future<SeriesExtra?> fetchSeriesInfo(
     if (f.existsSync()) f.deleteSync();
   }
 }
+
+/// Detalhes de um filme vindos do servidor (`get_vod_info`).
+class MovieExtra {
+  const MovieExtra({
+    this.plot,
+    this.backdrop,
+    this.genre,
+    this.director,
+    this.cast,
+    this.durationSecs,
+    this.year,
+  });
+
+  final String? plot;
+  final String? backdrop;
+  final String? genre;
+  final String? director;
+  final String? cast;
+  final int? durationSecs;
+  final String? year;
+}
+
+/// Lê a resposta de `get_vod_info` (o que não vier fica nulo).
+MovieExtra parseVodInfo(Object? json) {
+  if (json is! Map<String, dynamic>) return const MovieExtra();
+  final Object? info = json['info'];
+  if (info is! Map<String, dynamic>) return const MovieExtra();
+  final String? date = _text(info['releasedate'] ?? info['release_date']);
+  final RegExpMatch? y = date == null
+      ? null
+      : RegExp(r'(19|20)\d{2}').firstMatch(date);
+  return MovieExtra(
+    plot: _text(info['plot'] ?? info['description']),
+    backdrop: _image(info['backdrop_path']),
+    genre: _text(info['genre']),
+    director: _text(info['director']),
+    cast: _text(info['cast'] ?? info['actors']),
+    durationSecs: _int(info['duration_secs']) ?? _hms(info['duration']),
+    year: y?.group(0),
+  );
+}
+
+final Map<int, MovieExtra> _movieCache = <int, MovieExtra>{};
+
+/// Busca os detalhes do filme no próprio servidor da lista (uma vez por
+/// filme enquanto o app está aberto). Devolve null se não der.
+Future<MovieExtra?> fetchVodInfo(
+  ApiAccess api,
+  int streamId, {
+  bool allowInsecure = false,
+}) async {
+  final MovieExtra? hit = _movieCache[streamId];
+  if (hit != null) return hit;
+  final File f = File('${dataDir().path}/vod_info_$streamId.json');
+  try {
+    await downloadFile(
+      apiUri(api, 'get_vod_info', <String, String>{
+        'vod_id': '$streamId',
+      }).toString(),
+      f,
+      allowInsecure: allowInsecure,
+    );
+    final MovieExtra x = parseVodInfo(
+      jsonDecode(utf8.decode(await f.readAsBytes(), allowMalformed: true)),
+    );
+    _movieCache[streamId] = x;
+    return x;
+  } on DownloadException {
+    return null;
+  } on FormatException {
+    return null;
+  } finally {
+    if (f.existsSync()) f.deleteSync();
+  }
+}

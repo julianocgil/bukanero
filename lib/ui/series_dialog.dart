@@ -14,33 +14,6 @@ const double _cardW = 190;
 const double _cardH = 168;
 const double _gap = 10;
 
-/// Mostra capa, sinopse, temporadas e um carrossel de episódios.
-/// Devolve o episódio escolhido.
-///
-/// [extra] (opcional) traz do servidor as imagens e sinopses de cada
-/// episódio; enquanto não chega, ficam as imagens da própria lista.
-Future<Channel?> showSeriesDialog(
-  BuildContext context, {
-  required String title,
-  required String? cover,
-  required List<Episode> episodes,
-  String? lastUrl,
-  String? plot,
-  Future<SeriesExtra?>? extra,
-}) {
-  return showDialog<Channel>(
-    context: context,
-    builder: (BuildContext ctx) => _SeriesDialog(
-      title: title,
-      cover: cover,
-      episodes: episodes,
-      lastUrl: lastUrl,
-      plot: plot,
-      extra: extra,
-    ),
-  );
-}
-
 /// Nome do episódio sem o título da série e o "S01E02" da frente.
 String episodeLabel(Episode e) {
   final RegExpMatch? m = RegExp(
@@ -55,15 +28,25 @@ String _duration(int secs) {
   return min >= 60 ? '${min ~/ 60} h ${_two(min % 60)}' : '$min min';
 }
 
-class _SeriesDialog extends StatefulWidget {
-  const _SeriesDialog({
+/// Série no espaço da lista: capa, sinopse, temporadas e os episódios em
+/// páginas. [extra] (opcional) traz do servidor as imagens e sinopses de cada
+/// episódio; enquanto não chega, ficam as imagens da própria lista.
+class SeriesPanel extends StatefulWidget {
+  const SeriesPanel({
     required this.title,
     required this.cover,
     required this.episodes,
+    required this.onPick,
+    required this.onBack,
     this.lastUrl,
     this.plot,
     this.extra,
+    super.key,
   });
+
+  /// Episódio escolhido para tocar.
+  final ValueChanged<Channel> onPick;
+  final VoidCallback onBack;
 
   final String title;
   final String? cover;
@@ -75,10 +58,12 @@ class _SeriesDialog extends StatefulWidget {
   final Future<SeriesExtra?>? extra;
 
   @override
-  State<_SeriesDialog> createState() => _SeriesDialogState();
+  State<SeriesPanel> createState() => _SeriesPanelState();
 }
 
-class _SeriesDialogState extends State<_SeriesDialog> {
+class _SeriesPanelState extends State<SeriesPanel> {
+  bool _compact = false;
+
   late final Map<int, List<Episode>> _seasons = _group();
   late int _season = _initialSeason();
   final PageController _pages = PageController();
@@ -139,8 +124,7 @@ class _SeriesDialogState extends State<_SeriesDialog> {
     _turning = false;
   }
 
-  void _pick(Episode e) => Navigator.pop(
-    context,
+  void _pick(Episode e) => widget.onPick(
     Channel(
       name: '${widget.title} S${_two(e.season)}E${_two(e.episode)}',
       url: e.url,
@@ -151,78 +135,90 @@ class _SeriesDialogState extends State<_SeriesDialog> {
   @override
   Widget build(BuildContext context) {
     final ThemeData t = Theme.of(context);
-    final Size screen = MediaQuery.sizeOf(context);
     final List<Episode> list = _seasons[_season] ?? const <Episode>[];
     final String? plot = _extra?.plot ?? widget.plot;
     final String? backdrop = _extra?.backdrop;
-    return Dialog(
-      clipBehavior: Clip.antiAlias,
-      insetPadding: const EdgeInsets.all(24),
-      child: SizedBox(
-        width: (screen.width - 48).clamp(600, 1200),
-        height: (screen.height - 48).clamp(480, 760),
-        child: Stack(
-          children: <Widget>[
-            if (backdrop != null)
-              Positioned(
-                top: 0,
-                left: 0,
-                right: 0,
-                height: 280,
-                // Imagem de fundo que some em direção aos episódios.
-                child: ShaderMask(
-                  shaderCallback: (Rect r) => const LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    colors: <Color>[Colors.black54, Colors.transparent],
-                  ).createShader(r),
-                  blendMode: BlendMode.dstIn,
-                  child: CoverImage(
-                    url: backdrop,
-                    icon: Icons.image_outlined,
-                    cacheWidth: 1200,
-                  ),
+    // Espaço estreito (a lista ao lado do vídeo): tudo menor.
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints box) {
+        _compact = box.maxWidth < 760;
+        return _body(t, list, plot, backdrop);
+      },
+    );
+  }
+
+  Widget _body(
+    ThemeData t,
+    List<Episode> list,
+    String? plot,
+    String? backdrop,
+  ) {
+    return ClipRect(
+      child: Stack(
+        children: <Widget>[
+          if (backdrop != null)
+            Positioned(
+              top: 0,
+              left: 0,
+              right: 0,
+              height: 280,
+              // Imagem de fundo que some em direção aos episódios.
+              child: ShaderMask(
+                shaderCallback: (Rect r) => const LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: <Color>[Colors.black54, Colors.transparent],
+                ).createShader(r),
+                blendMode: BlendMode.dstIn,
+                child: CoverImage(
+                  url: backdrop,
+                  icon: Icons.image_outlined,
+                  cacheWidth: 1200,
                 ),
               ),
-            Padding(
-              padding: const EdgeInsets.all(20),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: <Widget>[
-                  _header(t, plot),
-                  const SizedBox(height: 16),
-                  SizedBox(
-                    height: 40,
-                    child: ListView(
-                      scrollDirection: Axis.horizontal,
-                      children: <Widget>[
-                        for (final int s in _seasons.keys)
-                          Padding(
-                            padding: const EdgeInsets.only(right: 8),
-                            child: ChoiceChip(
-                              label: Text(
-                                s == 0 ? 'Especiais' : 'Temporada $s',
-                              ),
-                              selected: s == _season,
-                              onSelected: (bool _) {
-                                setState(() {
-                                  _season = s;
-                                  _pageNow = 0;
-                                });
-                                if (_pages.hasClients) _pages.jumpToPage(0);
-                              },
-                            ),
-                          ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  Expanded(child: _episodes(t, list)),
-                ],
-              ),
             ),
-          ],
-        ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 4, 12, 8),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                FilledButton.tonalIcon(
+                  onPressed: widget.onBack,
+                  icon: const Icon(Icons.arrow_back),
+                  label: const Text('Voltar'),
+                ),
+                const SizedBox(height: 4),
+                _header(t, plot),
+                const SizedBox(height: 16),
+                SizedBox(
+                  height: 40,
+                  child: ListView(
+                    scrollDirection: Axis.horizontal,
+                    children: <Widget>[
+                      for (final int s in _seasons.keys)
+                        Padding(
+                          padding: const EdgeInsets.only(right: 8),
+                          child: ChoiceChip(
+                            label: Text(s == 0 ? 'Especiais' : 'Temporada $s'),
+                            selected: s == _season,
+                            onSelected: (bool _) {
+                              setState(() {
+                                _season = s;
+                                _pageNow = 0;
+                              });
+                              if (_pages.hasClients) _pages.jumpToPage(0);
+                            },
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Expanded(child: _episodes(t, list)),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -232,7 +228,7 @@ class _SeriesDialogState extends State<_SeriesDialog> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
         SizedBox(
-          width: 130,
+          width: _compact ? 84 : 130,
           child: AspectRatio(
             aspectRatio: 2 / 3,
             child: ClipRRect(
@@ -253,12 +249,12 @@ class _SeriesDialogState extends State<_SeriesDialog> {
               Row(
                 children: <Widget>[
                   Expanded(
-                    child: Text(widget.title, style: t.textTheme.headlineSmall),
-                  ),
-                  IconButton(
-                    tooltip: 'Fechar',
-                    icon: const Icon(Icons.close),
-                    onPressed: () => Navigator.pop(context),
+                    child: Text(
+                      widget.title,
+                      style: _compact
+                          ? t.textTheme.titleLarge
+                          : t.textTheme.headlineSmall,
+                    ),
                   ),
                 ],
               ),
@@ -271,7 +267,7 @@ class _SeriesDialogState extends State<_SeriesDialog> {
                 const SizedBox(height: 8),
                 Text(
                   plot,
-                  maxLines: 4,
+                  maxLines: _compact ? 3 : 4,
                   overflow: TextOverflow.ellipsis,
                   style: t.textTheme.bodyMedium,
                 ),
@@ -289,8 +285,10 @@ class _SeriesDialogState extends State<_SeriesDialog> {
         const double arrows = 2 * 48;
         final double w = box.maxWidth - arrows;
         final double h = box.maxHeight - 28; // linha de "página x de y"
-        final int cols = ((w + _gap) ~/ (_cardW + _gap)).clamp(1, 12);
-        final int rows = ((h + _gap) ~/ (_cardH + _gap)).clamp(1, 6);
+        final double cardW = _compact ? 140 : _cardW;
+        final double cardH = _compact ? 128 : _cardH;
+        final int cols = ((w + _gap) ~/ (cardW + _gap)).clamp(1, 12);
+        final int rows = ((h + _gap) ~/ (cardH + _gap)).clamp(1, 6);
         _perPage = rows * cols;
         _pageCount = list.isEmpty ? 1 : (list.length / _perPage).ceil();
         if (!_placed) {
@@ -390,7 +388,7 @@ class _SeriesDialogState extends State<_SeriesDialog> {
       ),
     );
     return SizedBox(
-      width: _cardW,
+      width: _compact ? 140 : _cardW,
       child: Card(
         margin: EdgeInsets.zero,
         clipBehavior: Clip.antiAlias,
@@ -453,7 +451,7 @@ class _SeriesDialogState extends State<_SeriesDialog> {
                         overflow: TextOverflow.ellipsis,
                         style: t.textTheme.labelLarge,
                       ),
-                      if (x?.plot != null)
+                      if (x?.plot != null && !_compact)
                         Flexible(
                           child: Padding(
                             padding: const EdgeInsets.only(top: 2),

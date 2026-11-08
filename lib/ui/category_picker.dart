@@ -29,20 +29,21 @@ class CategoryButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final ThemeData t = Theme.of(context);
+    // Mesma cara da pílula das seções.
     return Material(
-      color: t.colorScheme.secondaryContainer,
-      borderRadius: BorderRadius.circular(12),
+      color: t.colorScheme.surfaceContainer,
+      borderRadius: BorderRadius.circular(24),
       child: InkWell(
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(24),
         onTap: onPressed,
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
           child: Row(
             children: <Widget>[
               Icon(
-                Icons.category_outlined,
+                Icons.folder_copy_outlined,
                 size: 20,
-                color: t.colorScheme.onSecondaryContainer,
+                color: t.colorScheme.primary,
               ),
               const SizedBox(width: 8),
               Expanded(
@@ -51,7 +52,7 @@ class CategoryButton extends StatelessWidget {
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: t.textTheme.titleSmall?.copyWith(
-                    color: t.colorScheme.onSecondaryContainer,
+                    color: t.colorScheme.onSurface,
                   ),
                 ),
               ),
@@ -59,14 +60,11 @@ class CategoryButton extends StatelessWidget {
                 Text(
                   '$count',
                   style: t.textTheme.labelMedium?.copyWith(
-                    color: t.colorScheme.onSecondaryContainer,
+                    color: t.colorScheme.onSurface,
                   ),
                 ),
               const SizedBox(width: 4),
-              Icon(
-                Icons.expand_more,
-                color: t.colorScheme.onSecondaryContainer,
-              ),
+              Icon(Icons.expand_more, color: t.colorScheme.onSurface),
             ],
           ),
         ),

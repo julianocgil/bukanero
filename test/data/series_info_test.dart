@@ -63,4 +63,23 @@ void main() {
     expect(episodeLabel(ep('Série X S01E03')), 'Episódio 3');
     expect(episodeLabel(ep('Outra coisa')), 'Episódio 3');
   });
+
+  test('detalhes do filme (get_vod_info)', () {
+    final MovieExtra m = parseVodInfo(<String, dynamic>{
+      'info': <String, dynamic>{
+        'plot': 'Um filme fictício.',
+        'genre': 'Drama',
+        'director': 'Fulano',
+        'cast': 'Beltrano, Sicrano',
+        'duration': '01:52:00',
+        'releasedate': '2021-05-07',
+        'backdrop_path': <Object?>['http://s/fundo.jpg'],
+      },
+    });
+    expect(m.plot, 'Um filme fictício.');
+    expect(m.durationSecs, 112 * 60);
+    expect(m.year, '2021');
+    expect(m.backdrop, 'http://s/fundo.jpg');
+    expect(parseVodInfo(<String, dynamic>{'info': <Object?>[]}).plot, isNull);
+  });
 }

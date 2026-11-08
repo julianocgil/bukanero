@@ -13,7 +13,8 @@ Meta: empacotar como Flatpak. Idioma da conversa e da UI: português do Brasil.
   `lib/data/groups_db.dart` guarda os cartões; `tool/group_report.dart` gera o relatório de conferência
 - `test/` testes por módulo
 - `packages/media_kit_video/` cópia local do 2.0.1 com o PR media-kit#1466 (vídeo pela GPU no
-  Flutter 3.38+), via `dependency_overrides`. Remover quando a correção sair oficial.
+  Flutter 3.38+), via `dependency_overrides`, e o `updateShouldNotify` invertido do tema dos controles
+  corrigido (`material_desktop.dart`). Remover quando as correções saírem oficiais.
 
 ## Comandos
 - Verificar: `flutter analyze && flutter test` (sempre rodar antes de dizer que terminou)

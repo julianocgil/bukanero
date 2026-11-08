@@ -20,14 +20,17 @@ import '../domain/profile.dart';
 import '../domain/section.dart';
 import '../domain/series.dart';
 import '../domain/sort_mode.dart';
+import '../domain/stream_id.dart';
 import '../domain/version_pref.dart';
 import 'category_picker.dart';
 import 'guide_page.dart';
 import 'item_views.dart';
 import 'perf_monitor.dart';
+import 'movie_panel.dart';
 import 'player_view.dart';
 import 'review_groups.dart';
 import 'section_switch.dart';
+import 'settings_dialog.dart';
 import 'video_health.dart';
 import 'profile_dialog.dart';
 import 'series_dialog.dart';
@@ -87,6 +90,23 @@ class _HomePageState extends State<HomePage> {
   Future<void> _groupsTask = Future<void>.value();
   // Muda a cada play: uma tentativa antiga de outra versão para sozinha.
   int _playToken = 0;
+  // Episódio de série tocando: permite anterior/próximo e o "próximo
+  // episódio em 15 s" no fim.
+  ({Channel series, List<Episode> eps, int i})? _episode;
+  int? _nextIn;
+  Timer? _nextTimer;
+  StreamSubscription<bool>? _completedSub;
+  // Filme aberto no painel de detalhes (no lugar da grade).
+  Channel? _detail;
+  // Série aberta no painel (no lugar da grade).
+  ({
+    Channel series,
+    List<Episode> eps,
+    String? plot,
+    Future<SeriesExtra?>? extra,
+  })?
+  _seriesOpen;
+  Future<MovieExtra?>? _detailExtra;
   // Ordem padrão até o usuário escolher a dele (guardada por perfil).
   // Sem notas e datas carregadas, "recentes" cai para a ordem da lista.
   static const Map<Section, SortMode> _defaultSorts = <Section, SortMode>{
@@ -251,6 +271,63 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
+  void _togglePerf() {
+    setState(_perf.toggle);
+    final String? path = _perf.logPath;
+    if (path != null) _toast('Gravando o histórico em $path');
+  }
+
+  void _setRefreshHours(int h) {
+    final Profile? cur = _profile;
+    if (cur == null) return;
+    final Profile p = Profile(
+      id: cur.id,
+      name: cur.name,
+      url: cur.url,
+      epgUrl: cur.epgUrl,
+      allowInsecure: cur.allowInsecure,
+      refreshHours: h,
+    );
+    setState(() {
+      _profile = p;
+      _profiles = <Profile>[
+        for (final Profile x in _profiles) x.id == p.id ? p : x,
+      ];
+    });
+    saveProfiles(_profiles);
+    _maybeAutoRefresh();
+  }
+
+  Future<void> _openSettings() => showSettings(
+    context,
+    SettingsActions(
+      grouping: () => _grouping,
+      onGrouping: _toggleGrouping,
+      showHidden: () => _showHidden,
+      onShowHidden: () => setState(() {
+        _showHidden = !_showHidden;
+        _group = null;
+      }),
+      perfOn: () => _perf.running,
+      onPerf: _togglePerf,
+      refreshHours: () => _profile?.refreshHours ?? Profile.defaultRefreshHours,
+      onRefreshHours: _setRefreshHours,
+      onRefreshList: () => unawaited(_refreshList()),
+      onRefreshGuide: () => unawaited(_refreshEpg(force: true)),
+      onReview: () => unawaited(_reviewGroups()),
+      separatedCount: () => _separated.length,
+      onSeparated: () => unawaited(_showSeparated()),
+      onResetVersions: () {
+        for (final Section s in Section.values) {
+          _user?.setPref('ver.choices.${s.name}', '');
+        }
+        setState(() {});
+        _toast('As versões preferidas foram esquecidas.');
+      },
+      onEditProfile: () => unawaited(_editProfile()),
+    ),
+  );
+
   void _setSort(SortMode m) {
     setState(() => _sorts[_section] = m);
     _user?.setPref(_sortPrefKey(_section), m.name);
@@ -260,6 +337,9 @@ class _HomePageState extends State<HomePage> {
   void initState() {
     super.initState();
     _health; // começa a medir já
+    _completedSub = _player.stream.completed.listen((bool done) {
+      if (done) _onVideoEnded();
+    });
     _videoWatch = VideoPriority.activeChanges.listen((bool active) {
       if (!active) _runDeferred();
     });
@@ -287,6 +367,8 @@ class _HomePageState extends State<HomePage> {
     _debounce?.cancel();
     _autoRefresh?.cancel();
     _videoWatch?.cancel();
+    _completedSub?.cancel();
+    _nextTimer?.cancel();
     _health.dispose();
     _searchCtl.dispose();
     _closeData();
@@ -743,10 +825,10 @@ class _HomePageState extends State<HomePage> {
 
   // ---- ações --------------------------------------------------------------
 
+  /// Abre a série no espaço da lista (no lugar da grade).
   Future<void> _openSeries(Channel c) async {
     final SeriesDb? sdb = _series;
     if (sdb == null) return;
-    final String lastKey = 'last.${c.name}';
     // Imagens e sinopses dos episódios vêm do próprio servidor da lista.
     final (int? sid, String? plot) = sdb.seriesInfo(c.name);
     final Profile? p = _profile;
@@ -754,22 +836,138 @@ class _HomePageState extends State<HomePage> {
     final ApiAccess? api = (p == null || db == null)
         ? null
         : deriveApiAccess(p.url, db.sampleItemUrl());
-    final Channel? ep = await showSeriesDialog(
-      context,
-      title: c.name,
-      cover: c.logo,
-      episodes: sdb.episodes(c.name),
-      lastUrl: _user?.pref(lastKey),
-      plot: plot,
-      extra: (sid == null || api == null)
-          ? null
-          : fetchSeriesInfo(api, sid, allowInsecure: p!.allowInsecure),
+    setState(() {
+      _seriesOpen = (
+        series: c,
+        eps: sdb.episodes(c.name),
+        plot: plot,
+        extra: (sid == null || api == null)
+            ? null
+            : fetchSeriesInfo(api, sid, allowInsecure: p!.allowInsecure),
+      );
+    });
+  }
+
+  void _onEpisodePicked(Channel ep) {
+    final ({
+      Channel series,
+      List<Episode> eps,
+      String? plot,
+      Future<SeriesExtra?>? extra,
+    })?
+    open = _seriesOpen;
+    if (open == null) return;
+    final int i = open.eps.indexWhere((Episode e) => e.url == ep.url);
+    if (i < 0) {
+      _play(ep);
+      return;
+    }
+    _playEpisode(open.series, open.eps, i);
+  }
+
+  /// Toca o episódio [i] da série; ele vira o "último assistido".
+  void _playEpisode(Channel series, List<Episode> eps, int i) {
+    final Episode e = eps[i];
+    String two(int n) => n.toString().padLeft(2, '0');
+    _user?.addRecent(Section.series, series);
+    _user?.setPref('last.${series.name}', e.url);
+    _play(
+      Channel(
+        name: '${series.name} S${two(e.season)}E${two(e.episode)}',
+        url: e.url,
+        logo: e.logo,
+      ),
+      episode: true,
     );
-    if (ep == null || !mounted) return;
-    // A série vai para os recentes e guarda o episódio, para continuar.
-    _user?.addRecent(Section.series, c);
-    _user?.setPref(lastKey, ep.url);
-    _play(ep);
+    setState(() => _episode = (series: series, eps: eps, i: i));
+  }
+
+  void _stepEpisode(int delta) {
+    final ({Channel series, List<Episode> eps, int i})? ep = _episode;
+    if (ep == null) return;
+    final int j = ep.i + delta;
+    if (j < 0 || j >= ep.eps.length) return;
+    _playEpisode(ep.series, ep.eps, j);
+  }
+
+  void _cancelNext() {
+    _nextTimer?.cancel();
+    _nextTimer = null;
+    if (_nextIn != null && mounted) setState(() => _nextIn = null);
+  }
+
+  /// Fim do vídeo: se for episódio com próximo, conta 15 s e toca sozinho.
+  void _onVideoEnded() {
+    final ({Channel series, List<Episode> eps, int i})? ep = _episode;
+    if (!mounted || ep == null || ep.i + 1 >= ep.eps.length) return;
+    _nextTimer?.cancel();
+    setState(() => _nextIn = 15);
+    _nextTimer = Timer.periodic(const Duration(seconds: 1), (Timer t) {
+      if (!mounted) return t.cancel();
+      final int left = (_nextIn ?? 0) - 1;
+      if (left <= 0) {
+        t.cancel();
+        _cancelNext();
+        _stepEpisode(1);
+      } else {
+        setState(() => _nextIn = left);
+      }
+    });
+  }
+
+  /// Aviso "Próximo episódio em N s" no canto do vídeo.
+  Widget _nextEpisodeCard() {
+    final ({Channel series, List<Episode> eps, int i}) ep = _episode!;
+    final Episode next = ep.eps[ep.i + 1];
+    final ThemeData t = Theme.of(context);
+    String two(int n) => n.toString().padLeft(2, '0');
+    return Card(
+      color: t.colorScheme.surfaceContainerHigh,
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            Text(
+              'Próximo episódio em ${_nextIn}s',
+              style: t.textTheme.labelLarge?.copyWith(
+                color: t.colorScheme.primary,
+              ),
+            ),
+            const SizedBox(height: 4),
+            SizedBox(
+              width: 280,
+              child: Text(
+                'T${two(next.season)} E${two(next.episode)} · '
+                '${episodeLabel(next)}',
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            const SizedBox(height: 10),
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                FilledButton.icon(
+                  icon: const Icon(Icons.skip_next),
+                  label: const Text('Assistir agora'),
+                  onPressed: () {
+                    _cancelNext();
+                    _stepEpisode(1);
+                  },
+                ),
+                const SizedBox(width: 8),
+                TextButton(
+                  onPressed: _cancelNext,
+                  child: const Text('Cancelar'),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   Future<void> _openGuide() async {
@@ -841,6 +1039,36 @@ class _HomePageState extends State<HomePage> {
     setState(() {});
   }
 
+  /// Clique num filme: abre os detalhes no espaço da lista. Nas séries e
+  /// nos canais, o clique continua como antes.
+  void _onPosterTap(Channel c) {
+    if (_section != Section.movies) {
+      _onItemTap(c);
+      return;
+    }
+    final Profile? p = _profile;
+    final CatalogDb? db = _db;
+    final ApiAccess? api = (p == null || db == null)
+        ? null
+        : deriveApiAccess(p.url, db.sampleItemUrl());
+    final int? sid = streamIdFromUrl(c.url);
+    setState(() {
+      _detail = c;
+      _detailExtra = (api == null || sid == null)
+          ? null
+          : fetchVodInfo(api, sid, allowInsecure: p!.allowInsecure);
+    });
+  }
+
+  void _closeDetail() {
+    if (_detail != null || _seriesOpen != null) {
+      setState(() {
+        _detail = null;
+        _seriesOpen = null;
+      });
+    }
+  }
+
   void _removeRecent(Channel c) {
     _user?.removeRecent(_section, c.url);
     setState(() {});
@@ -878,7 +1106,10 @@ class _HomePageState extends State<HomePage> {
                   channel: c,
                   selected: c.url == _playingUrl,
                   hidden: false,
-                  onTap: () => _onItemTap(c),
+                  onTap: () => _onPosterTap(c),
+                  onDoubleTap: _section == Section.movies
+                      ? () => _onItemTap(c)
+                      : null,
                   onToggleHidden: () {},
                   onRemove: () => _removeRecent(c),
                 ),
@@ -891,7 +1122,10 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  void _play(Channel c) {
+  void _play(Channel c, {bool episode = false}) {
+    _cancelNext();
+    // Tocar outra coisa sai do modo "episódio de série".
+    if (!episode) _episode = null;
     if (c.isGroup) {
       unawaited(_playGroup(c, _playOrder(c), 0));
       return;
@@ -997,6 +1231,8 @@ class _HomePageState extends State<HomePage> {
   /// Versão escolhida à mão: fica guardada como a preferida deste cartão
   /// e toca (se não abrir, tenta as outras).
   void _playVersion(Channel card, Channel version) {
+    _cancelNext();
+    _episode = null;
     final ChannelVersion v = card.versions.firstWhere(
       (ChannelVersion x) => x.channel.url == version.url,
     );
@@ -1069,6 +1305,7 @@ class _HomePageState extends State<HomePage> {
   }
 
   void _onQuery(String v) {
+    _closeDetail();
     _debounce?.cancel();
     _debounce = Timer(const Duration(milliseconds: 250), () {
       if (mounted) setState(() => _query = v);
@@ -1113,35 +1350,6 @@ class _HomePageState extends State<HomePage> {
         ),
         actions: <Widget>[
           IconButton(
-            tooltip: _showHidden
-                ? 'Esconder os itens ocultos'
-                : 'Mostrar os itens ocultos',
-            icon: Icon(_showHidden ? Icons.visibility : Icons.visibility_off),
-            onPressed: () => setState(() {
-              _showHidden = !_showHidden;
-              _group = null;
-            }),
-          ),
-          IconButton(
-            tooltip: _perf.running
-                ? 'Desligar o monitor de desempenho'
-                : 'Monitor de desempenho (FPS)',
-            icon: Icon(_perf.running ? Icons.speed : Icons.speed_outlined),
-            isSelected: _perf.running,
-            onPressed: () {
-              setState(_perf.toggle);
-              final String? path = _perf.logPath;
-              if (path != null) _toast('Gravando o histórico em $path');
-            },
-          ),
-          IconButton(
-            tooltip: 'Atualizar o guia de programação (EPG)',
-            icon: const Icon(Icons.event_note),
-            onPressed: (cur == null || _epgBusy)
-                ? null
-                : () => _refreshEpg(force: true),
-          ),
-          IconButton(
             tooltip: _listBusy
                 ? 'Atualizando a lista...'
                 : 'Atualizar a lista (em segundo plano)',
@@ -1176,6 +1384,12 @@ class _HomePageState extends State<HomePage> {
                 ),
             ],
           ),
+          IconButton(
+            tooltip: 'Configurações',
+            icon: const Icon(Icons.settings_outlined),
+            onPressed: _openSettings,
+          ),
+          const SizedBox(width: 4),
         ],
       ),
       body: _future == null
@@ -1355,7 +1569,26 @@ class _HomePageState extends State<HomePage> {
             Expanded(
               child: Stack(
                 children: <Widget>[
-                  Positioned.fill(child: PlayerView(controller: _video)),
+                  Positioned.fill(
+                    child: PlayerView(
+                      controller: _video,
+                      episodeMode: _episode != null,
+                      onPrevious: (_episode != null && _episode!.i > 0)
+                          ? () => _stepEpisode(-1)
+                          : null,
+                      onNext:
+                          (_episode != null &&
+                              _episode!.i + 1 < _episode!.eps.length)
+                          ? () => _stepEpisode(1)
+                          : null,
+                    ),
+                  ),
+                  if (_nextIn != null && _episode != null)
+                    Positioned(
+                      right: 16,
+                      bottom: 80,
+                      child: _nextEpisodeCard(),
+                    ),
                   if (_perf.running)
                     Positioned(
                       top: 8,
@@ -1399,6 +1632,8 @@ class _HomePageState extends State<HomePage> {
     if (c == null || !mounted) return;
     setState(() {
       _group = c.group;
+      _detail = null;
+      _seriesOpen = null;
       _setQuery('');
     });
   }
@@ -1469,6 +1704,8 @@ class _HomePageState extends State<HomePage> {
       selected: _section,
       onChanged: (Section s) => setState(() {
         _section = s;
+        _detail = null;
+        _seriesOpen = null;
         _group = null;
         _setQuery('');
       }),
@@ -1562,7 +1799,10 @@ class _HomePageState extends State<HomePage> {
                   channel: c,
                   selected: c.url == _playingUrl,
                   hidden: hidden,
-                  onTap: () => _onItemTap(c),
+                  onTap: () => _onPosterTap(c),
+                  onDoubleTap: _section == Section.movies
+                      ? () => _onItemTap(c)
+                      : null,
                   onToggleHidden: () => _toggleItem(c, hidden),
                   onPickVersion: (Channel v) {
                     _user?.addRecent(_section, c);
@@ -1577,6 +1817,69 @@ class _HomePageState extends State<HomePage> {
                       ? null
                       : () => _regroup(_separatedKeyOf(c)!),
                 );
+              },
+            ),
+          ),
+        ],
+      );
+    }
+
+    final ({
+      Channel series,
+      List<Episode> eps,
+      String? plot,
+      Future<SeriesExtra?>? extra,
+    })?
+    open = _seriesOpen;
+    if (open != null && _section == Section.series) {
+      body = Stack(
+        fit: StackFit.expand,
+        children: <Widget>[
+          Offstage(child: body),
+          Positioned.fill(
+            child: SeriesPanel(
+              key: ValueKey<String>('series:${open.series.url}'),
+              title: open.series.name,
+              cover: open.series.logo,
+              episodes: open.eps,
+              plot: open.plot,
+              extra: open.extra,
+              lastUrl: _user?.pref('last.${open.series.name}'),
+              onPick: _onEpisodePicked,
+              onBack: _closeDetail,
+            ),
+          ),
+        ],
+      );
+    }
+
+    final Channel? detail = _detail;
+    if (detail != null && _section == Section.movies) {
+      // StackFit.expand: a grade escondida mede zero; sem isso o painel
+      // ficava com largura zero e não aparecia.
+      body = Stack(
+        fit: StackFit.expand,
+        children: <Widget>[
+          Offstage(child: body),
+          Positioned.fill(
+            child: MoviePanel(
+              key: ValueKey<String>('detail:${detail.url}'),
+              movie: detail,
+              extra: _detailExtra,
+              preferred: detail.isGroup
+                  ? _playOrder(detail).first.channel
+                  : detail,
+              favorite: _isFavorite(detail, favs),
+              onBack: _closeDetail,
+              onToggleFavorite: () =>
+                  _toggleFavorite(detail, _isFavorite(detail, favs)),
+              onPlay: (Channel? version) {
+                _user?.addRecent(_section, detail);
+                if (version == null) {
+                  _play(detail);
+                } else {
+                  _playVersion(detail, version);
+                }
               },
             ),
           ),
