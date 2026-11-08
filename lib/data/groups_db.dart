@@ -216,6 +216,23 @@ class GroupIndex {
   final Map<int, GroupRef> members;
   final Map<int, String> names;
   final Map<int, String> keys;
+  late final Map<String, int> _cardOfKey = <String, int>{
+    for (final MapEntry<int, String> e in keys.entries) e.value: e.key,
+  };
+
+  /// Chave do grupo separado de onde [c] veio (para "juntar de novo"), ou
+  /// null se ele não está num grupo separado.
+  String? separatedKey(Channel c, Set<String> separated) {
+    final GroupRef? g = c.itemId == null ? null : members[c.itemId];
+    final String? k = g == null ? null : keys[g.card];
+    return (k != null && separated.contains(k)) ? k : null;
+  }
+
+  /// Nome do cartão de um grupo, pela chave (para listar os separados).
+  String? nameOfKey(String key) {
+    final int? card = _cardOfKey[key];
+    return card == null ? null : names[card];
+  }
 
   /// Junta as versões de [items] em cartões, na posição da primeira que
   /// aparece (respeitando a ordem escolhida). Grupos em [separated] ficam

@@ -148,6 +148,89 @@ class _HomePageState extends State<HomePage> {
     _toast('Grupo "${c.name}" separado. As versões aparecem soltas.');
   }
 
+  /// Chave do grupo separado de onde [c] veio, se o agrupamento está ligado.
+  String? _separatedKeyOf(Channel c) =>
+      (_grouping && !c.isGroup) ? _groups?.separatedKey(c, _separated) : null;
+
+  void _regroup(String key) {
+    _user?.setSeparated(key, separated: false);
+    setState(() => _separated = <String>{..._separated}..remove(key));
+    final String? name = _groups?.nameOfKey(key);
+    _toast(
+      name == null
+          ? 'Versões juntadas de novo.'
+          : 'As versões de "$name" foram juntadas de novo.',
+    );
+  }
+
+  /// Lista os grupos separados, para juntar de novo um a um ou todos.
+  Future<void> _showSeparated() async {
+    await showDialog<void>(
+      context: context,
+      builder: (BuildContext ctx) => StatefulBuilder(
+        builder: (BuildContext ctx, StateSetter refresh) {
+          final List<String> keys = _separated.toList()
+            ..sort(
+              (String a, String b) => (_groups?.nameOfKey(a) ?? a).compareTo(
+                _groups?.nameOfKey(b) ?? b,
+              ),
+            );
+          return AlertDialog(
+            title: Text('Grupos separados (${keys.length})'),
+            content: SizedBox(
+              width: 460,
+              child: keys.isEmpty
+                  ? const Text('Nenhum grupo separado.')
+                  : ListView(
+                      shrinkWrap: true,
+                      children: <Widget>[
+                        for (final String k in keys)
+                          ListTile(
+                            dense: true,
+                            leading: const Icon(Icons.call_split),
+                            // Sem o cartão (lista mudou), mostra as versões.
+                            title: Text(
+                              _groups?.nameOfKey(k) ??
+                                  k.split('\u0001').join(' · '),
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            trailing: TextButton.icon(
+                              icon: const Icon(Icons.merge_type),
+                              label: const Text('Reagrupar'),
+                              onPressed: () {
+                                _regroup(k);
+                                refresh(() {});
+                              },
+                            ),
+                          ),
+                      ],
+                    ),
+            ),
+            actions: <Widget>[
+              if (keys.length > 1)
+                TextButton(
+                  onPressed: () {
+                    for (final String k in keys) {
+                      _user?.setSeparated(k, separated: false);
+                    }
+                    setState(() => _separated = <String>{});
+                    Navigator.pop(ctx);
+                    _toast('Todos os grupos foram juntados de novo.');
+                  },
+                  child: const Text('Reagrupar todos'),
+                ),
+              FilledButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('Fechar'),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
   void _setSort(SortMode m) {
     setState(() => _sorts[_section] = m);
     _user?.setPref(_sortPrefKey(_section), m.name);
@@ -1324,7 +1407,9 @@ class _HomePageState extends State<HomePage> {
         backgroundColor: t.colorScheme.secondaryContainer,
         foregroundColor: t.colorScheme.onSecondaryContainer,
       ),
-      onSelected: (Object v) => v is SortMode ? _setSort(v) : _toggleGrouping(),
+      onSelected: (Object v) => v is SortMode
+          ? _setSort(v)
+          : (v == 'separated' ? _showSeparated() : _toggleGrouping()),
       itemBuilder: (BuildContext context) => <PopupMenuEntry<Object>>[
         if (_section != Section.series) ...<PopupMenuEntry<Object>>[
           CheckedPopupMenuItem<Object>(
@@ -1332,6 +1417,11 @@ class _HomePageState extends State<HomePage> {
             checked: _grouping,
             child: const Text('Agrupar versões repetidas'),
           ),
+          if (_separated.isNotEmpty)
+            PopupMenuItem<Object>(
+              value: 'separated',
+              child: Text('Grupos separados (${_separated.length})…'),
+            ),
           const PopupMenuDivider(),
         ],
         for (final SortMode m in SortMode.values)
@@ -1406,6 +1496,9 @@ class _HomePageState extends State<HomePage> {
         chosenVersion: c.isGroup ? _chosenName(c) : null,
         favorite: _isFavorite(c, favs),
         onToggleFavorite: () => _toggleFavorite(c, _isFavorite(c, favs)),
+        onRegroup: _separatedKeyOf(c) == null
+            ? null
+            : () => _regroup(_separatedKeyOf(c)!),
       );
     }
 
@@ -1465,6 +1558,9 @@ class _HomePageState extends State<HomePage> {
                   favorite: _isFavorite(c, favs),
                   onToggleFavorite: () =>
                       _toggleFavorite(c, _isFavorite(c, favs)),
+                  onRegroup: _separatedKeyOf(c) == null
+                      ? null
+                      : () => _regroup(_separatedKeyOf(c)!),
                 );
               },
             ),

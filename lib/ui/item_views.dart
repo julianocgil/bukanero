@@ -6,10 +6,18 @@ import 'cover_image.dart';
 
 /// Menu ⋮ para ocultar ou reexibir um item ou uma categoria.
 class HideMenu extends StatelessWidget {
-  const HideMenu({required this.hidden, required this.onToggle, super.key});
+  const HideMenu({
+    required this.hidden,
+    required this.onToggle,
+    this.onRegroup,
+    super.key,
+  });
 
   final bool hidden;
   final VoidCallback onToggle;
+
+  /// Item que veio de um grupo separado: oferece juntar as versões de novo.
+  final VoidCallback? onRegroup;
 
   @override
   Widget build(BuildContext context) {
@@ -18,7 +26,7 @@ class HideMenu extends StatelessWidget {
       iconSize: 20,
       padding: EdgeInsets.zero,
       icon: const Icon(Icons.more_vert),
-      onSelected: (int _) => onToggle(),
+      onSelected: (int v) => v == 1 ? onRegroup?.call() : onToggle(),
       itemBuilder: (BuildContext context) => <PopupMenuEntry<int>>[
         PopupMenuItem<int>(
           value: 0,
@@ -30,6 +38,17 @@ class HideMenu extends StatelessWidget {
             ],
           ),
         ),
+        if (onRegroup != null)
+          const PopupMenuItem<int>(
+            value: 1,
+            child: Row(
+              children: <Widget>[
+                Icon(Icons.merge_type, size: 18),
+                SizedBox(width: 8),
+                Text('Juntar as versões de novo'),
+              ],
+            ),
+          ),
       ],
     );
   }
@@ -180,6 +199,7 @@ class LiveTile extends StatelessWidget {
     this.chosenVersion,
     this.favorite = false,
     this.onToggleFavorite,
+    this.onRegroup,
     super.key,
   });
 
@@ -187,6 +207,7 @@ class LiveTile extends StatelessWidget {
   final bool selected;
   final bool hidden;
   final int nowSecs;
+  final VoidCallback? onRegroup;
   final String? chosenVersion;
   final bool favorite;
   final VoidCallback? onToggleFavorite;
@@ -280,7 +301,11 @@ class LiveTile extends StatelessWidget {
                     onSeparate: onSeparate!,
                     chosen: chosenVersion,
                   ),
-                HideMenu(hidden: hidden, onToggle: onToggleHidden),
+                HideMenu(
+                  hidden: hidden,
+                  onToggle: onToggleHidden,
+                  onRegroup: onRegroup,
+                ),
               ],
             ),
           ),
@@ -304,6 +329,7 @@ class PosterCard extends StatelessWidget {
     this.chosenVersion,
     this.favorite = false,
     this.onToggleFavorite,
+    this.onRegroup,
     super.key,
   });
 
@@ -311,6 +337,7 @@ class PosterCard extends StatelessWidget {
   final bool selected;
   final bool hidden;
   final bool favorite;
+  final VoidCallback? onRegroup;
   final VoidCallback? onToggleFavorite;
   final VoidCallback onTap;
   final VoidCallback onToggleHidden;
@@ -429,6 +456,7 @@ class PosterCard extends StatelessWidget {
                             : HideMenu(
                                 hidden: hidden,
                                 onToggle: onToggleHidden,
+                                onRegroup: onRegroup,
                               ),
                       ),
                     ),

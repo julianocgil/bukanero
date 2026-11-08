@@ -65,5 +65,10 @@ http://s/movie/u/p/6.mp4
       separated: <String>{cards.first.groupKey!},
     );
     expect(apart.first.isGroup, isFalse);
+    // Cada versão solta sabe de que grupo veio, para juntar de novo.
+    final Set<String> sep = <String>{cards.first.groupKey!};
+    expect(gi.separatedKey(apart.first, sep), cards.first.groupKey);
+    expect(gi.separatedKey(apart.first, <String>{}), isNull);
+    expect(gi.nameOfKey(cards.first.groupKey!), 'Aventura');
   });
 }
