@@ -328,6 +328,21 @@ class SeriesDb {
     return out;
   }
 
+  /// Séries pelos títulos (favoritos), na ordem de [titles].
+  List<Channel> byTitles(List<String> titles) {
+    final List<Channel> out = <Channel>[];
+    for (final String t in titles) {
+      final ResultSet rs = _db.select(
+        'SELECT s.title AS title, s.grp AS grp, $_logo AS logo, '
+        's.url AS url, SUM(s.episodes) AS n, $_rating AS rating '
+        'FROM series s $_join WHERE s.title = ? GROUP BY s.title',
+        <Object?>[t],
+      );
+      if (rs.isNotEmpty) out.add(_entry(rs.first, rs.first['grp'] as String));
+    }
+    return out;
+  }
+
   /// Id da série no servidor e a sinopse, quando as notas já chegaram.
   (int?, String?) seriesInfo(String title) {
     if (!_infoOn) return (null, null);

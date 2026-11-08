@@ -113,7 +113,10 @@ bool _hasSeriesCover(String dbPath) {
       for (final Row r in db.select('PRAGMA table_info(series)'))
         r['name'] as String,
     };
-    return cols.containsAll(_seriesColumns);
+    final bool vodTmdb = db
+        .select('PRAGMA table_info(vod)')
+        .any((Row r) => r['name'] == 'tmdb');
+    return cols.containsAll(_seriesColumns) && vodTmdb;
   } on Object {
     return false;
   } finally {
@@ -141,7 +144,8 @@ void buildMetadataDb(String dbPath, List<Object?> vod, List<Object?> series) {
         vod_id INTEGER PRIMARY KEY,
         rating REAL,
         added INTEGER,
-        year INTEGER
+        year INTEGER,
+        tmdb INTEGER
       );
       CREATE TABLE series(
         mkey TEXT PRIMARY KEY,
@@ -155,8 +159,8 @@ void buildMetadataDb(String dbPath, List<Object?> vod, List<Object?> series) {
     ''');
 
     final PreparedStatement iv = db.prepare(
-      'INSERT OR REPLACE INTO vod(vod_id, rating, added, year) '
-      'VALUES (?, ?, ?, ?)',
+      'INSERT OR REPLACE INTO vod(vod_id, rating, added, year, tmdb) '
+      'VALUES (?, ?, ?, ?, ?)',
     );
     db.execute('BEGIN');
     for (final Object? o in vod) {
@@ -168,6 +172,9 @@ void buildMetadataDb(String dbPath, List<Object?> vod, List<Object?> series) {
         _num(o['rating']),
         _int(o['added']),
         _year(o['year']),
+        // Código do filme no TMDB, quando o servidor informa: serve para
+        // saber, sem depender do nome, se duas versões são o mesmo filme.
+        _int(o['tmdb'] ?? o['tmdb_id']),
       ]);
     }
     db.execute('COMMIT');

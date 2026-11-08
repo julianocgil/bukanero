@@ -9,6 +9,7 @@ import '../data/bandwidth.dart';
 import '../data/catalog_db.dart';
 import '../data/download.dart';
 import '../data/epg.dart';
+import '../data/groups_db.dart';
 import '../data/metadata.dart';
 import '../data/profile_store.dart';
 import '../data/series_db.dart';
@@ -19,6 +20,7 @@ import '../domain/profile.dart';
 import '../domain/section.dart';
 import '../domain/series.dart';
 import '../domain/sort_mode.dart';
+import '../domain/version_pref.dart';
 import 'category_picker.dart';
 import 'guide_page.dart';
 import 'item_views.dart';
@@ -76,6 +78,13 @@ class _HomePageState extends State<HomePage> {
   bool _showHidden = false;
   // Lista ampliada sobre o espaço do vídeo.
   bool _wide = false;
+  // Versões do mesmo canal/filme num cartão só (preferência por perfil).
+  GroupIndex? _groups;
+  bool _grouping = true;
+  Set<String> _separated = <String>{};
+  Future<void> _groupsTask = Future<void>.value();
+  // Muda a cada play: uma tentativa antiga de outra versão para sozinha.
+  int _playToken = 0;
   // Ordem padrão até o usuário escolher a dele (guardada por perfil).
   // Sem notas e datas carregadas, "recentes" cai para a ordem da lista.
   static const Map<Section, SortMode> _defaultSorts = <Section, SortMode>{
@@ -98,6 +107,45 @@ class _HomePageState extends State<HomePage> {
           .asNameMap()[user.pref(_sortPrefKey(s))];
       if (m != null) _sorts[s] = m;
     }
+  }
+
+  void _loadGroupPrefs(UserData user) {
+    _grouping = user.pref('group.on') != 'off';
+    _separated = user.separatedGroups();
+  }
+
+  /// Recalcula os grupos (só se a lista, o guia ou as notas mudaram).
+  void _reloadGroups() {
+    final Profile? p = _profile;
+    if (p == null) return;
+    final int gen = _gen;
+    _groupsTask = _groupsTask.then((_) async {
+      try {
+        await ensureGroups(
+          catalogDbPath(p),
+          groupsDbPath(p),
+          epgPath: epgDbPath(p),
+          metaPath: metaDbPath(p),
+        );
+      } on Object {
+        return; // sem grupos, a lista aparece como sempre
+      }
+      if (!mounted || gen != _gen) return;
+      setState(() => _groups = GroupIndex.tryOpen(groupsDbPath(p)));
+    });
+  }
+
+  void _toggleGrouping() {
+    setState(() => _grouping = !_grouping);
+    _user?.setPref('group.on', _grouping ? 'on' : 'off');
+  }
+
+  void _separate(Channel c) {
+    final String? key = c.groupKey;
+    if (key == null) return;
+    _user?.setSeparated(key, separated: true);
+    setState(() => _separated = <String>{..._separated, key});
+    _toast('Grupo "${c.name}" separado. As versões aparecem soltas.');
   }
 
   void _setSort(SortMode m) {
@@ -230,6 +278,9 @@ class _HomePageState extends State<HomePage> {
     _db = db;
     _user = UserData.open(userDataPath(p));
     _loadSorts(_user!);
+    _loadGroupPrefs(_user!);
+    _groups = GroupIndex.tryOpen(groupsDbPath(p));
+    unawaited(Future<void>.microtask(_reloadGroups));
     _series = SeriesDb.open(seriesDbPath(p));
     final String metaPath = metaDbPath(p);
     db.attachMeta(metaPath);
@@ -322,6 +373,7 @@ class _HomePageState extends State<HomePage> {
       await ensureSeriesIndex(dbPath, seriesDbPath(p));
       if (!mounted || _profile?.id != p.id) return;
       _swapCatalog(p, dbPath);
+      _reloadGroups();
       _autoFailedAt = null;
       _toast(auto ? 'Lista atualizada automaticamente.' : 'Lista atualizada.');
       unawaited(_refreshMeta(force: true));
@@ -413,6 +465,7 @@ class _HomePageState extends State<HomePage> {
         _epgBusy = false;
         _epgStatus = 'Guia: $n programas, $matched canais com programação';
       });
+      _reloadGroups(); // o guia ajuda a confirmar canais iguais
     } on DownloadCancelled {
       _epgBusy = false;
     } on Object catch (err) {
@@ -467,6 +520,7 @@ class _HomePageState extends State<HomePage> {
       }
       cur.attachMeta(path);
       _series?.attachMeta(path);
+      _reloadGroups();
       final (int, int) m = cur.metaCoverage();
       final (int, int) sr = _series?.metaCoverage() ?? (0, 0);
       setState(() => _metaBusy = false);
@@ -547,6 +601,7 @@ class _HomePageState extends State<HomePage> {
     deleteCatalog(cur);
     deleteSeries(cur);
     deleteMeta(cur);
+    deleteGroups(cur);
     deleteEpg(cur);
     deleteUserData(cur);
     final List<Profile> rest = _profiles
@@ -621,7 +676,7 @@ class _HomePageState extends State<HomePage> {
     if (db == null || user == null || epg == null) return;
     final Set<String> groups = user.hiddenGroups(Section.live);
     final Set<String> keys = user.hiddenItemKeys(Section.live);
-    final List<Channel> channels = db.search(
+    List<Channel> channels = db.search(
       Section.live,
       '',
       limit: 1 << 30,
@@ -630,6 +685,10 @@ class _HomePageState extends State<HomePage> {
           : (String g, String n) =>
                 groups.contains(g) || keys.contains(hiddenKey(g, n)),
     );
+    final GroupIndex? gi = _groups;
+    if (_grouping && gi != null) {
+      channels = gi.collapse(channels, separated: _separated);
+    }
     final Channel? c = await showGuide(
       context,
       channels: channels,
@@ -646,6 +705,37 @@ class _HomePageState extends State<HomePage> {
       if (_section != Section.live) _user?.addRecent(_section, c);
       _play(c);
     }
+  }
+
+  /// Programa atual: pelo cartão e, se não achar, por cada versão.
+  Programme? _nowOn(Channel c, int now) {
+    final EpgDb? epg = _epg;
+    if (epg == null) return null;
+    Programme? p = epg.nowNext(c.tvgId, now, name: c.name).$1;
+    for (final ChannelVersion v in c.versions) {
+      if (p != null) break;
+      p = epg.nowNext(v.channel.tvgId, now, name: v.channel.name).$1;
+    }
+    return p;
+  }
+
+  bool _isFavorite(Channel c, Set<String> favs) =>
+      favs.contains(c.url) ||
+      c.versions.any((ChannelVersion v) => favs.contains(v.channel.url));
+
+  void _toggleFavorite(Channel c, bool favorite) {
+    final UserData? u = _user;
+    if (u == null) return;
+    if (favorite) {
+      // Tira o cartão e qualquer versão dele que tenha sido marcada.
+      u.setFavorite(_section, c, favorite: false);
+      for (final ChannelVersion v in c.versions) {
+        u.setFavorite(_section, v.channel, favorite: false);
+      }
+    } else {
+      u.setFavorite(_section, c, favorite: true);
+    }
+    setState(() {});
   }
 
   void _removeRecent(Channel c) {
@@ -699,11 +789,150 @@ class _HomePageState extends State<HomePage> {
   }
 
   void _play(Channel c) {
+    if (c.isGroup) {
+      unawaited(_playGroup(c, _playOrder(c), 0));
+      return;
+    }
+    _playToken++;
     setState(() {
       _playing = c.name;
       _playingUrl = c.url;
     });
     _player.open(Media(c.url));
+  }
+
+  // As escolhas de versão feitas à mão valem para TODOS os cartões da
+  // seção: guarda as últimas 10 marcas ("4K", "L", "FHD"...), e as duas mais
+  // escolhidas abrem primeiro.
+  String get _choicesKey => 'ver.choices.${_section.name}';
+
+  List<String> get _prefMarks =>
+      topMarks(decodeChoices(_user?.pref(_choicesKey)));
+
+  /// Versão que abre primeiro neste cartão (para marcar no menu).
+  String? _chosenName(Channel card) =>
+      _prefMarks.isEmpty ? null : _playOrder(card).first.channel.name;
+
+  /// Ordem de tentativa: 1ª e 2ª marcas preferidas; depois a automática.
+  List<ChannelVersion> _playOrder(Channel card) => orderByPreference(
+    card.versions,
+    (ChannelVersion v) => v.mark,
+    _prefMarks,
+  );
+
+  /// Toca a versão [i] de [order]; se ela não começar, tenta a próxima
+  /// sozinha.
+  Future<void> _playGroup(
+    Channel card,
+    List<ChannelVersion> order,
+    int i, {
+    Set<ChannelVersion> tried = const <ChannelVersion>{},
+  }) async {
+    final int token = ++_playToken;
+    final ChannelVersion v = order[i];
+    // Filmes: trocar sozinho poderia mudar de dublado para legendado; o app
+    // pergunta. Canais ao vivo: as versões são o mesmo sinal, troca sozinho.
+    final bool ask = _section != Section.live;
+    setState(() {
+      _playing = '${card.name} · ${v.label}';
+      _playingUrl = card.url;
+    });
+    final Future<bool> started = _waitStart();
+    await _player.open(Media(v.channel.url));
+    final bool ok = await started;
+    if (ok || token != _playToken || !mounted) return;
+    final Set<ChannelVersion> done = <ChannelVersion>{...tried, v};
+    final List<ChannelVersion> left = <ChannelVersion>[
+      for (final ChannelVersion x in order)
+        if (!done.contains(x)) x,
+    ];
+    if (left.isEmpty) {
+      _toast('Nenhuma versão de "${card.name}" abriu agora.');
+      return;
+    }
+    if (!ask) {
+      _toast('A versão ${v.label} não abriu. Tentando ${left.first.label}...');
+      await _playGroup(card, left, 0, tried: done);
+      return;
+    }
+    final ChannelVersion? next = await showDialog<ChannelVersion>(
+      context: context,
+      builder: (BuildContext ctx) => AlertDialog(
+        title: Text('A versão ${v.label} não abriu'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            Text('Quer tentar outra versão de "${card.name}"?'),
+            const SizedBox(height: 8),
+            for (final ChannelVersion x in left)
+              ListTile(
+                dense: true,
+                leading: const Icon(Icons.play_arrow),
+                title: Text(x.label),
+                onTap: () => Navigator.pop(ctx, x),
+              ),
+          ],
+        ),
+        actions: <Widget>[
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancelar'),
+          ),
+        ],
+      ),
+    );
+    if (next == null || !mounted || token != _playToken) return;
+    await _playGroup(
+      card,
+      <ChannelVersion>[next, ...left.where((ChannelVersion x) => x != next)],
+      0,
+      tried: done,
+    );
+  }
+
+  /// Versão escolhida à mão: fica guardada como a preferida deste cartão
+  /// e toca (se não abrir, tenta as outras).
+  void _playVersion(Channel card, Channel version) {
+    final ChannelVersion v = card.versions.firstWhere(
+      (ChannelVersion x) => x.channel.url == version.url,
+    );
+    _user?.setPref(
+      _choicesKey,
+      encodeChoices(
+        pushChoice(decodeChoices(_user?.pref(_choicesKey)), v.mark),
+      ),
+    );
+    setState(() {}); // os outros cartões passam a marcar a nova preferência
+    // Esta escolhida primeiro; se não abrir, as outras.
+    final List<ChannelVersion> order = <ChannelVersion>[
+      v,
+      ..._playOrder(card).where((ChannelVersion x) => x != v),
+    ];
+    unawaited(_playGroup(card, order, 0));
+  }
+
+  /// True quando o vídeo começa a andar; false se der erro ou passar 12 s.
+  Future<bool> _waitStart() {
+    final Completer<bool> done = Completer<bool>();
+    late final StreamSubscription<Duration> pos;
+    late final StreamSubscription<String> err;
+    final Timer limit = Timer(const Duration(seconds: 12), () {
+      if (!done.isCompleted) done.complete(false);
+    });
+    pos = _player.stream.position.listen((Duration d) {
+      if (d > const Duration(seconds: 1) && !done.isCompleted) {
+        done.complete(true);
+      }
+    });
+    err = _player.stream.error.listen((String _) {
+      if (!done.isCompleted) done.complete(false);
+    });
+    return done.future.whenComplete(() {
+      limit.cancel();
+      pos.cancel();
+      err.cancel();
+    });
   }
 
   void _toggleGroup(String g, bool hidden) {
@@ -714,9 +943,17 @@ class _HomePageState extends State<HomePage> {
   }
 
   void _toggleItem(Channel c, bool hidden) {
-    final String? g = _group ?? c.group;
-    if (g == null) return;
-    _user?.setItemHidden(_section, g, c.name, hidden: !hidden);
+    // Um cartão agrupado oculta (ou mostra) todas as versões.
+    final List<Channel> all = c.isGroup
+        ? <Channel>[for (final ChannelVersion v in c.versions) v.channel]
+        : <Channel>[c];
+    for (final Channel x in all) {
+      final String? g = (_group == null || _group == favoritesGroup)
+          ? x.group
+          : _group;
+      if (g == null) continue;
+      _user?.setItemHidden(_section, g, x.name, hidden: !hidden);
+    }
     setState(() {});
   }
 
@@ -735,9 +972,11 @@ class _HomePageState extends State<HomePage> {
     });
   }
 
-  bool _isHidden(Channel c, Set<String> hidden) => _group != null
-      ? hidden.contains(c.name)
-      : hidden.contains(hiddenKey(c.group ?? '', c.name));
+  bool _isHidden(Channel c, Set<String> hidden) => c.isGroup
+      ? c.versions.every((ChannelVersion v) => _isHidden(v.channel, hidden))
+      : ((_group != null && _group != favoritesGroup)
+            ? hidden.contains(c.name)
+            : hidden.contains(hiddenKey(c.group ?? '', c.name)));
 
   @override
   Widget build(BuildContext context) {
@@ -957,6 +1196,42 @@ class _HomePageState extends State<HomePage> {
       }
     }
 
+    // Categoria Favoritos: busca no catálogo atual o que foi marcado.
+    final bool favMode = group == favoritesGroup;
+    if (favMode) {
+      hiddenItems = user.hiddenItemKeys(_section);
+      final List<(String, String)> favs = user.favoriteList(_section);
+      items = _section == Section.series
+          ? (sdb?.byTitles(<String>[for (final (_, String n) in favs) n]) ??
+                const <Channel>[])
+          : db.itemsByUrls(_section, <String>[
+              for (final (String u, _) in favs) u,
+            ]);
+      final String q = normalize(_query.trim());
+      if (q.isNotEmpty) {
+        items = items
+            .where((Channel c) => normalize(c.name).contains(q))
+            .toList();
+      }
+    }
+
+    // Versões do mesmo canal/filme viram um cartão só.
+    final GroupIndex? gi = _groups;
+    if (_grouping && gi != null && _section != Section.series) {
+      final Set<String> allHidden = user.hiddenItemKeys(_section);
+      items = gi.collapse(
+        items,
+        separated: _separated,
+        fetch: db.itemsByIds,
+        // Versões de outras categorias: fora as ocultas (item ou categoria).
+        isHidden: _showHidden
+            ? null
+            : (Channel c) =>
+                  hiddenGroups.contains(c.group) ||
+                  allHidden.contains(hiddenKey(c.group ?? '', c.name)),
+      );
+    }
+
     return LayoutBuilder(
       builder: (BuildContext context, BoxConstraints box) {
         // Normal: grade e vídeo lado a lado. Ampliada: a grade toma o lugar
@@ -1021,6 +1296,7 @@ class _HomePageState extends State<HomePage> {
       selected: _group,
       isHidden: isHidden,
       onToggleHidden: (String g) => _toggleGroup(g, isHidden(g)),
+      favorites: user.favoriteList(_section).length,
     );
     if (c == null || !mounted) return;
     setState(() {
@@ -1041,18 +1317,26 @@ class _HomePageState extends State<HomePage> {
   Widget _sortMenu() {
     final ThemeData t = Theme.of(context);
     final SortMode cur = _sorts[_section] ?? SortMode.listOrder;
-    return PopupMenuButton<SortMode>(
+    return PopupMenuButton<Object>(
       tooltip: 'Ordenar: ${_sortLabel(cur)}',
       icon: const Icon(Icons.sort),
       style: IconButton.styleFrom(
         backgroundColor: t.colorScheme.secondaryContainer,
         foregroundColor: t.colorScheme.onSecondaryContainer,
       ),
-      onSelected: _setSort,
-      itemBuilder: (BuildContext context) => <PopupMenuEntry<SortMode>>[
+      onSelected: (Object v) => v is SortMode ? _setSort(v) : _toggleGrouping(),
+      itemBuilder: (BuildContext context) => <PopupMenuEntry<Object>>[
+        if (_section != Section.series) ...<PopupMenuEntry<Object>>[
+          CheckedPopupMenuItem<Object>(
+            value: 'group',
+            checked: _grouping,
+            child: const Text('Agrupar versões repetidas'),
+          ),
+          const PopupMenuDivider(),
+        ],
         for (final SortMode m in SortMode.values)
           if (!m.needsMeta || _section != Section.live)
-            CheckedPopupMenuItem<SortMode>(
+            CheckedPopupMenuItem<Object>(
               value: m,
               enabled: !m.needsMeta || _hasMeta,
               checked: cur == m,
@@ -1104,6 +1388,7 @@ class _HomePageState extends State<HomePage> {
     final ThemeData t = Theme.of(context);
     final bool live = _section == Section.live;
     final int now = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+    final Set<String> favs = _user?.favorites(_section) ?? const <String>{};
     Widget liveTile(BuildContext context, int i) {
       final Channel c = items[i];
       final bool hidden = _isHidden(c, hiddenItems);
@@ -1113,9 +1398,14 @@ class _HomePageState extends State<HomePage> {
         selected: c.url == _playingUrl,
         hidden: hidden,
         nowSecs: now,
-        current: _epg?.nowNext(c.tvgId, now, name: c.name).$1,
+        current: _nowOn(c, now),
         onTap: () => _play(c),
         onToggleHidden: () => _toggleItem(c, hidden),
+        onPickVersion: (Channel v) => _playVersion(c, v),
+        onSeparate: () => _separate(c),
+        chosenVersion: c.isGroup ? _chosenName(c) : null,
+        favorite: _isFavorite(c, favs),
+        onToggleFavorite: () => _toggleFavorite(c, _isFavorite(c, favs)),
       );
     }
 
@@ -1166,6 +1456,15 @@ class _HomePageState extends State<HomePage> {
                   hidden: hidden,
                   onTap: () => _onItemTap(c),
                   onToggleHidden: () => _toggleItem(c, hidden),
+                  onPickVersion: (Channel v) {
+                    _user?.addRecent(_section, c);
+                    _playVersion(c, v);
+                  },
+                  onSeparate: () => _separate(c),
+                  chosenVersion: c.isGroup ? _chosenName(c) : null,
+                  favorite: _isFavorite(c, favs),
+                  onToggleFavorite: () =>
+                      _toggleFavorite(c, _isFavorite(c, favs)),
                 );
               },
             ),
@@ -1185,10 +1484,17 @@ class _HomePageState extends State<HomePage> {
               const SizedBox(width: 8),
               Expanded(
                 child: CategoryButton(
-                  label: group ?? 'Todas as categorias',
-                  count: group == null
-                      ? counts.values.fold<int>(0, (int a, int b) => a + b)
-                      : counts[group],
+                  label: group == favoritesGroup
+                      ? 'Favoritos'
+                      : (group ?? 'Todas as categorias'),
+                  count: group == favoritesGroup
+                      ? items.length
+                      : (group == null
+                            ? counts.values.fold<int>(
+                                0,
+                                (int a, int b) => a + b,
+                              )
+                            : counts[group]),
                   onPressed: () => _pickCategory(groups, counts),
                 ),
               ),

@@ -3,6 +3,9 @@ import 'package:flutter/material.dart';
 import '../domain/section.dart';
 import 'item_views.dart';
 
+/// Categoria especial com os favoritos da seção.
+const String favoritesGroup = '\u0001favoritos';
+
 /// Escolha feita no painel: [group] nulo = todas as categorias.
 class CategoryChoice {
   const CategoryChoice(this.group);
@@ -82,6 +85,7 @@ Future<CategoryChoice?> showCategoryPicker(
   required String? selected,
   required bool Function(String group) isHidden,
   required void Function(String group) onToggleHidden,
+  int favorites = 0,
 }) {
   return showGeneralDialog<CategoryChoice>(
     context: context,
@@ -97,6 +101,7 @@ Future<CategoryChoice?> showCategoryPicker(
           selected: selected,
           isHidden: isHidden,
           onToggleHidden: onToggleHidden,
+          favorites: favorites,
         ),
     transitionBuilder:
         (
@@ -125,8 +130,10 @@ class _CategoryPanel extends StatefulWidget {
     required this.selected,
     required this.isHidden,
     required this.onToggleHidden,
+    this.favorites = 0,
   });
 
+  final int favorites;
   final String title;
   final List<String> groups;
   final Map<String, int> counts;
@@ -226,7 +233,7 @@ class _CategoryPanelState extends State<_CategoryPanel> {
                           mainAxisSpacing: 8,
                           crossAxisSpacing: 8,
                         ),
-                    itemCount: list.length + (_query.isEmpty ? 1 : 0),
+                    itemCount: list.length + (_query.isEmpty ? 2 : 0),
                     itemBuilder: (BuildContext context, int i) {
                       if (_query.isEmpty && i == 0) {
                         return _tile(
@@ -238,7 +245,17 @@ class _CategoryPanelState extends State<_CategoryPanel> {
                           onTap: () => _pick(null),
                         );
                       }
-                      final String g = list[i - (_query.isEmpty ? 1 : 0)];
+                      if (_query.isEmpty && i == 1) {
+                        return _tile(
+                          t,
+                          label: 'Favoritos',
+                          count: widget.favorites,
+                          selected: widget.selected == favoritesGroup,
+                          icon: Icons.favorite,
+                          onTap: () => _pick(favoritesGroup),
+                        );
+                      }
+                      final String g = list[i - (_query.isEmpty ? 2 : 0)];
                       final bool hidden = widget.isHidden(g);
                       return _tile(
                         t,

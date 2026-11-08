@@ -224,7 +224,7 @@ class CatalogDb {
     int limit = 2000,
   }) {
     final ResultSet rs = _db.select(
-      'SELECT i.name AS name, i.url AS url, i.logo AS logo, '
+      'SELECT i.id AS id, i.name AS name, i.url AS url, i.logo AS logo, '
       'i.tvg_id AS tvg_id, $_rating AS rating FROM items i $_join '
       'WHERE i.section = ? AND i.grp = ? AND i.name LIKE ? ESCAPE ? '
       'ORDER BY ${_orderBy(_eff)} LIMIT ?',
@@ -248,6 +248,7 @@ class CatalogDb {
           logo: r['logo'] as String?,
           tvgId: r['tvg_id'] as String?,
           rating: (r['rating'] as num?)?.toDouble(),
+          itemId: r['id'] as int,
         ),
       );
       if (out.length >= limit) break;
@@ -269,8 +270,9 @@ class CatalogDb {
     int offset = 0;
     while (out.length < limit) {
       final ResultSet rs = _db.select(
-        'SELECT i.grp AS grp, i.name AS name, i.url AS url, i.logo AS logo, '
-        'i.tvg_id AS tvg_id, $_rating AS rating FROM items i $_join '
+        'SELECT i.id AS id, i.grp AS grp, i.name AS name, i.url AS url, '
+        'i.logo AS logo, i.tvg_id AS tvg_id, $_rating AS rating '
+        'FROM items i $_join '
         'WHERE i.section = ? AND i.name LIKE ? ESCAPE ? '
         'ORDER BY ${_orderBy(_eff)} LIMIT ? OFFSET ?',
         <Object?>[s.index, like, r'\', batch, offset],
@@ -287,6 +289,7 @@ class CatalogDb {
             logo: r['logo'] as String?,
             tvgId: r['tvg_id'] as String?,
             rating: (r['rating'] as num?)?.toDouble(),
+            itemId: r['id'] as int,
           ),
         );
         if (out.length >= limit) break;
@@ -295,6 +298,68 @@ class CatalogDb {
       offset += batch;
     }
     return out;
+  }
+
+  /// Itens pelo id (para completar um cartão agrupado com as versões que
+  /// estão em outras categorias).
+  Map<int, Channel> itemsByIds(Iterable<int> ids) {
+    final List<int> all = ids.toList();
+    final Map<int, Channel> out = <int, Channel>{};
+    for (int i = 0; i < all.length; i += 500) {
+      final List<int> part = all.sublist(i, (i + 500).clamp(0, all.length));
+      final ResultSet rs = _db.select(
+        'SELECT i.id AS id, i.grp AS grp, i.name AS name, i.url AS url, '
+        'i.logo AS logo, i.tvg_id AS tvg_id, $_rating AS rating '
+        'FROM items i $_join WHERE i.id IN (${List<String>.filled(part.length, '?').join(',')})',
+        part,
+      );
+      for (final Row r in rs) {
+        final int id = r['id'] as int;
+        out[id] = Channel(
+          name: r['name'] as String,
+          url: r['url'] as String,
+          group: r['grp'] as String,
+          logo: r['logo'] as String?,
+          tvgId: r['tvg_id'] as String?,
+          rating: (r['rating'] as num?)?.toDouble(),
+          itemId: id,
+        );
+      }
+    }
+    return out;
+  }
+
+  /// Itens da seção pelos endereços (favoritos), na ordem de [urls].
+  List<Channel> itemsByUrls(Section s, List<String> urls) {
+    final Map<String, Channel> found = <String, Channel>{};
+    for (int i = 0; i < urls.length; i += 500) {
+      final List<String> part = urls.sublist(
+        i,
+        (i + 500).clamp(0, urls.length),
+      );
+      final ResultSet rs = _db.select(
+        'SELECT i.id AS id, i.grp AS grp, i.name AS name, i.url AS url, '
+        'i.logo AS logo, i.tvg_id AS tvg_id, $_rating AS rating '
+        'FROM items i $_join WHERE i.section = ? AND i.url IN '
+        '(${List<String>.filled(part.length, '?').join(',')})',
+        <Object?>[s.index, ...part],
+      );
+      for (final Row r in rs) {
+        found[r['url'] as String] = Channel(
+          name: r['name'] as String,
+          url: r['url'] as String,
+          group: r['grp'] as String,
+          logo: r['logo'] as String?,
+          tvgId: r['tvg_id'] as String?,
+          rating: (r['rating'] as num?)?.toDouble(),
+          itemId: r['id'] as int,
+        );
+      }
+    }
+    return <Channel>[
+      for (final String u in urls)
+        if (found[u] != null) found[u]!,
+    ];
   }
 
   /// URLs de guia (EPG) declaradas no cabeçalho do M3U.

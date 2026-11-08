@@ -35,6 +35,136 @@ class HideMenu extends StatelessWidget {
   }
 }
 
+/// Coração para favoritar um cartão.
+class FavoriteButton extends StatelessWidget {
+  const FavoriteButton({
+    required this.favorite,
+    required this.onToggle,
+    this.overlay = false,
+    super.key,
+  });
+
+  final bool favorite;
+  final VoidCallback onToggle;
+
+  /// Sobre a capa (fundo escuro).
+  final bool overlay;
+
+  @override
+  Widget build(BuildContext context) {
+    final Widget button = IconButton(
+      tooltip: favorite ? 'Tirar dos favoritos' : 'Favoritar',
+      iconSize: 18,
+      visualDensity: VisualDensity.compact,
+      color: favorite
+          ? Colors.redAccent
+          : (overlay ? Colors.white : Theme.of(context).disabledColor),
+      icon: Icon(favorite ? Icons.favorite : Icons.favorite_border),
+      onPressed: onToggle,
+    );
+    if (!overlay) return button;
+    return DecoratedBox(
+      decoration: const BoxDecoration(
+        color: Colors.black54,
+        shape: BoxShape.circle,
+      ),
+      child: button,
+    );
+  }
+}
+
+/// Etiqueta "3 versões" de um cartão agrupado: abre a lista para escolher
+/// qual tocar, e a opção de separar o grupo.
+class VersionsMenu extends StatelessWidget {
+  const VersionsMenu({
+    required this.channel,
+    required this.onPick,
+    required this.onSeparate,
+    this.overlay = false,
+    this.chosen,
+    super.key,
+  });
+
+  final Channel channel;
+  final void Function(Channel version) onPick;
+  final VoidCallback onSeparate;
+
+  /// Nome da versão que o usuário escolheu por último (abre nela).
+  final String? chosen;
+
+  /// Sobre a capa (fundo escuro) em vez de no meio do texto.
+  final bool overlay;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData t = Theme.of(context);
+    final Color fg = overlay
+        ? Colors.white
+        : t.colorScheme.onSecondaryContainer;
+    return PopupMenuButton<int>(
+      tooltip: 'Escolher a versão',
+      onSelected: (int i) =>
+          i < 0 ? onSeparate() : onPick(channel.versions[i].channel),
+      itemBuilder: (BuildContext context) => <PopupMenuEntry<int>>[
+        for (int i = 0; i < channel.versions.length; i++)
+          PopupMenuItem<int>(
+            value: i,
+            child: Row(
+              children: <Widget>[
+                const Icon(Icons.play_arrow, size: 18),
+                const SizedBox(width: 8),
+                Text(channel.versions[i].label),
+                if (channel.versions[i].channel.name == chosen) ...<Widget>[
+                  const SizedBox(width: 8),
+                  Text('(sua preferência)', style: t.textTheme.bodySmall),
+                ] else if (i == 0 && chosen == null) ...<Widget>[
+                  const SizedBox(width: 8),
+                  Text('(automática)', style: t.textTheme.bodySmall),
+                ],
+              ],
+            ),
+          ),
+        const PopupMenuDivider(),
+        const PopupMenuItem<int>(
+          value: -1,
+          child: Row(
+            children: <Widget>[
+              Icon(Icons.call_split, size: 18),
+              SizedBox(width: 8),
+              Text('Separar este grupo'),
+            ],
+          ),
+        ),
+      ],
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+        decoration: BoxDecoration(
+          color: overlay
+              ? Colors.black.withValues(alpha: 0.7)
+              : t.colorScheme.secondaryContainer,
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            Icon(Icons.layers_outlined, size: 14, color: fg),
+            const SizedBox(width: 3),
+            Text(
+              '${channel.versions.length}',
+              style: TextStyle(
+                color: fg,
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            Icon(Icons.arrow_drop_down, size: 16, color: fg),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 /// Cartão de canal ao vivo: logo pequeno, nome e programa atual do guia.
 class LiveTile extends StatelessWidget {
   const LiveTile({
@@ -45,6 +175,11 @@ class LiveTile extends StatelessWidget {
     required this.onTap,
     required this.onToggleHidden,
     this.current,
+    this.onPickVersion,
+    this.onSeparate,
+    this.chosenVersion,
+    this.favorite = false,
+    this.onToggleFavorite,
     super.key,
   });
 
@@ -52,9 +187,14 @@ class LiveTile extends StatelessWidget {
   final bool selected;
   final bool hidden;
   final int nowSecs;
+  final String? chosenVersion;
+  final bool favorite;
+  final VoidCallback? onToggleFavorite;
   final Programme? current;
   final VoidCallback onTap;
   final VoidCallback onToggleHidden;
+  final void Function(Channel version)? onPickVersion;
+  final VoidCallback? onSeparate;
 
   @override
   Widget build(BuildContext context) {
@@ -126,6 +266,20 @@ class LiveTile extends StatelessWidget {
                     ],
                   ),
                 ),
+                if (onToggleFavorite != null)
+                  FavoriteButton(
+                    favorite: favorite,
+                    onToggle: onToggleFavorite!,
+                  ),
+                if (channel.isGroup &&
+                    onPickVersion != null &&
+                    onSeparate != null)
+                  VersionsMenu(
+                    channel: channel,
+                    onPick: onPickVersion!,
+                    onSeparate: onSeparate!,
+                    chosen: chosenVersion,
+                  ),
                 HideMenu(hidden: hidden, onToggle: onToggleHidden),
               ],
             ),
@@ -145,17 +299,27 @@ class PosterCard extends StatelessWidget {
     required this.onTap,
     required this.onToggleHidden,
     this.onRemove,
+    this.onPickVersion,
+    this.onSeparate,
+    this.chosenVersion,
+    this.favorite = false,
+    this.onToggleFavorite,
     super.key,
   });
 
   final Channel channel;
   final bool selected;
   final bool hidden;
+  final bool favorite;
+  final VoidCallback? onToggleFavorite;
   final VoidCallback onTap;
   final VoidCallback onToggleHidden;
 
   /// Com ele, o canto mostra um X (tirar dos recentes) no lugar do menu.
   final VoidCallback? onRemove;
+  final void Function(Channel version)? onPickVersion;
+  final VoidCallback? onSeparate;
+  final String? chosenVersion;
 
   static String _fmtRating(double r) =>
       (r == r.roundToDouble() ? r.toStringAsFixed(0) : r.toStringAsFixed(1))
@@ -217,6 +381,30 @@ class PosterCard extends StatelessWidget {
                               ),
                             ],
                           ),
+                        ),
+                      ),
+                    if (onToggleFavorite != null)
+                      Positioned(
+                        bottom: 2,
+                        right: 2,
+                        child: FavoriteButton(
+                          favorite: favorite,
+                          onToggle: onToggleFavorite!,
+                          overlay: true,
+                        ),
+                      ),
+                    if (channel.isGroup &&
+                        onPickVersion != null &&
+                        onSeparate != null)
+                      Positioned(
+                        bottom: 4,
+                        left: 4,
+                        child: VersionsMenu(
+                          channel: channel,
+                          onPick: onPickVersion!,
+                          onSeparate: onSeparate!,
+                          overlay: true,
+                          chosen: chosenVersion,
                         ),
                       ),
                     Positioned(

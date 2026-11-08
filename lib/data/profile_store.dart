@@ -120,3 +120,10 @@ void deleteMeta(Profile p) {
   final File f = File(metaDbPath(p));
   if (f.existsSync()) f.deleteSync();
 }
+
+String groupsDbPath(Profile p) => '${dataDir().path}/groups_${p.id}.db';
+
+void deleteGroups(Profile p) {
+  final File f = File(groupsDbPath(p));
+  if (f.existsSync()) f.deleteSync();
+}

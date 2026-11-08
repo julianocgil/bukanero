@@ -39,6 +39,14 @@ class UserData {
         at INTEGER NOT NULL,
         PRIMARY KEY(section, url)
       );
+      CREATE TABLE IF NOT EXISTS separated(key TEXT PRIMARY KEY);
+      CREATE TABLE IF NOT EXISTS favorite(
+        section INTEGER NOT NULL,
+        url TEXT NOT NULL,
+        name TEXT NOT NULL,
+        at INTEGER NOT NULL,
+        PRIMARY KEY(section, url)
+      );
     ''');
     return UserData._(db);
   }
@@ -164,6 +172,61 @@ class UserData {
     'DELETE FROM recent WHERE section = ? AND url = ?',
     <Object?>[s.index, url],
   );
+
+  /// Grupos que o usuário mandou separar (chave do cartão).
+  Set<String> separatedGroups() => <String>{
+    for (final Row r in _db.select('SELECT key FROM separated'))
+      r['key'] as String,
+  };
+
+  void setSeparated(String key, {required bool separated}) {
+    if (separated) {
+      _db.execute('INSERT OR IGNORE INTO separated(key) VALUES (?)', <Object?>[
+        key,
+      ]);
+    } else {
+      _db.execute('DELETE FROM separated WHERE key = ?', <Object?>[key]);
+    }
+  }
+
+  /// Endereços favoritos da seção (o de um cartão agrupado é o da versão
+  /// que ele mostra; o de uma série é `series://título`).
+  Set<String> favorites(Section s) => <String>{
+    for (final Row r in _db.select(
+      'SELECT url FROM favorite WHERE section = ?',
+      <Object?>[s.index],
+    ))
+      r['url'] as String,
+  };
+
+  /// Favoritos da seção, do mais novo para o mais antigo.
+  List<(String, String)> favoriteList(Section s) => <(String, String)>[
+    for (final Row r in _db.select(
+      'SELECT url, name FROM favorite WHERE section = ? ORDER BY at DESC',
+      <Object?>[s.index],
+    ))
+      (r['url'] as String, r['name'] as String),
+  ];
+
+  void setFavorite(Section s, Channel c, {required bool favorite}) {
+    if (favorite) {
+      _db.execute(
+        'INSERT OR REPLACE INTO favorite(section, url, name, at) '
+        'VALUES (?, ?, ?, ?)',
+        <Object?>[
+          s.index,
+          c.url,
+          c.name,
+          DateTime.now().microsecondsSinceEpoch,
+        ],
+      );
+    } else {
+      _db.execute(
+        'DELETE FROM favorite WHERE section = ? AND url = ?',
+        <Object?>[s.index, c.url],
+      );
+    }
+  }
 
   void close() => _db.close();
 }

@@ -58,4 +58,18 @@ void main() {
       '2',
     ]);
   });
+
+  test('favoritos: marca, lista do mais novo, desmarca, por seção', () {
+    const Channel a = Channel(name: 'A', url: 'http://s/a.mp4');
+    const Channel b = Channel(name: 'B', url: 'series://B');
+    u.setFavorite(Section.movies, a, favorite: true);
+    u.setFavorite(Section.series, b, favorite: true);
+    expect(u.favorites(Section.movies), <String>{'http://s/a.mp4'});
+    expect(u.favoriteList(Section.series), <(String, String)>[
+      ('series://B', 'B'),
+    ]);
+    u.setFavorite(Section.movies, a, favorite: false);
+    expect(u.favorites(Section.movies), isEmpty);
+    expect(u.favorites(Section.series), hasLength(1));
+  });
 }

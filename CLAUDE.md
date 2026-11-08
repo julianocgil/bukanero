@@ -8,7 +8,9 @@ Meta: empacotar como Flatpak. Idioma da conversa e da UI: português do Brasil.
 - `lib/domain/` modelos puros (Channel, Section, Profile, series, sort_mode, stream_id)
 - `lib/data/` M3U parser, download, SQLite (catalog/series/meta/epg/user_data), cache de imagens, profile_store
 - `lib/ui/` home_page, item_views, cover_image, series_dialog, player_view, profile_dialog,
-  guide_page (grade do EPG), perf_monitor (FPS)
+  guide_page (grade do EPG), perf_monitor (FPS), category_picker, video_health
+- `lib/domain/grouping.dart` agrupamento de versões (aprende as marcas da própria lista);
+  `lib/data/groups_db.dart` guarda os cartões; `tool/group_report.dart` gera o relatório de conferência
 - `test/` testes por módulo
 - `packages/media_kit_video/` cópia local do 2.0.1 com o PR media-kit#1466 (vídeo pela GPU no
   Flutter 3.38+), via `dependency_overrides`. Remover quando a correção sair oficial.
@@ -38,8 +40,6 @@ a pasta antiga `meu_iptv/` é movida para `bukanero/`.
 - Strict analysis ligado: sem `print`, aspas simples, tipos explícitos, vírgulas finais.
 
 ## Pendências conhecidas
-- Agrupar canais repetidos (HD/FHD/SD/4K, Premiere 1/2/3) no ao vivo e no guia; tentar a próxima
-  versão se uma não abrir
-- Agrupar filmes repetidos (legendado/dublado/HD/outra versão); a imagem ajuda a separar versões
-- Favoritos
+- Ordem automática por resolução medida no player (hoje: marca mais frequente + tabela de qualidade)
+- EPG por nome do canal: revisar canais regionais sem guia próprio
 - Flatpak (hoje há o .deb: `linux/packaging/build_deb.sh`; Release no GitHub privado)

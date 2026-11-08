@@ -1,16 +1,20 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">
-  <!-- Fundo: mar à noite -->
-  <rect x="8" y="8" width="240" height="240" rx="52" fill="#12263f"/>
-  <path d="M8 182 Q72 160 128 182 T248 182 V196 Q248 248 196 248 H60 Q8 248 8 196 Z" fill="#1d3d63"/>
-  <!-- Chapéu de pirata (tricórnio) -->
-  <path d="M40 120 Q128 40 216 120 Q186 106 128 110 Q70 106 40 120 Z" fill="#0b0f16"/>
-  <path d="M40 120 Q70 104 128 108 Q186 104 216 120 Q170 132 128 130 Q86 132 40 120 Z" fill="#e0b043"/>
-  <!-- Caveira simples -->
-  <circle cx="128" cy="82" r="16" fill="#f4efe1"/>
-  <rect x="119" y="92" width="18" height="10" rx="3" fill="#f4efe1"/>
-  <circle cx="122" cy="80" r="4" fill="#0b0f16"/>
-  <circle cx="134" cy="80" r="4" fill="#0b0f16"/>
-  <!-- Tela de TV com o "play" -->
-  <rect x="70" y="140" width="116" height="72" rx="12" fill="#f4efe1"/>
-  <path d="M118 158 L148 176 L118 194 Z" fill="#12263f"/>
+  <!-- Fundo azul-marinho -->
+  <rect x="8" y="8" width="240" height="240" rx="52" fill="#16234a"/>
+  <!-- Sinal (transmissão) no canto -->
+  <g fill="none" stroke="#d9ac4f" stroke-width="11" stroke-linecap="round">
+    <path d="M52 76 A24 24 0 0 1 76 100"/>
+    <path d="M52 52 A48 48 0 0 1 100 100"/>
+  </g>
+  <circle cx="54" cy="98" r="9" fill="#d9ac4f"/>
+  <!-- Mastro -->
+  <rect x="121" y="46" width="12" height="122" rx="3" fill="#d9ac4f"/>
+  <!-- Vela única, grande e cheia de vento -->
+  <path d="M92 70 Q131 61 172 70 Q188 113 172 158 Q131 150 96 158 Q106 113 92 70 Z"
+        fill="#d9ac4f"/>
+  <!-- Casco com gurupés apontando para a frente -->
+  <path d="M38 164 Q118 178 186 160 L230 128 Q236 134 232 140 Q212 170 192 184
+           Q132 208 74 202 Q52 196 38 164 Z" fill="#d9ac4f"/>
+  <!-- Linha d'água -->
+  <path d="M66 196 Q128 212 194 182 Q160 214 92 214 Q74 210 66 196 Z" fill="#f4efe1"/>
 </svg>

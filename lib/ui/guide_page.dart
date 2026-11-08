@@ -107,7 +107,11 @@ class _GuidePageState extends State<_GuidePage> {
   List<_GuideRow> _load() {
     final List<_GuideRow> rows = <_GuideRow>[];
     for (final Channel c in widget.channels) {
-      final String? ch = widget.epg.channelFor(c.tvgId, c.name);
+      // Cartão agrupado: pelo nome dele e, se não achar, por cada versão.
+      String? ch = widget.epg.channelFor(c.tvgId, c.name);
+      for (final ChannelVersion v in c.versions) {
+        ch ??= widget.epg.channelFor(v.channel.tvgId, v.channel.name);
+      }
       if (ch == null) continue;
       final List<Programme> p = widget.epg.programmes(ch, _start, _end);
       if (p.isNotEmpty) rows.add(_GuideRow(c, p));
