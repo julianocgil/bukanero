@@ -96,6 +96,14 @@ class _HomePageState extends State<HomePage> {
   int? _nextIn;
   Timer? _nextTimer;
   StreamSubscription<bool>? _completedSub;
+  // Tela cheia automática: 2 min de mouse parado com vídeo tocando. Se o
+  // usuário sair, não volta sozinha até tocar outro vídeo.
+  final GlobalKey<VideoState> _videoKey = GlobalKey<VideoState>();
+  DateTime _lastMouse = DateTime.now();
+  bool _autoFsOff = false;
+  bool _autoFsOn = false;
+  Timer? _autoFsTimer;
+  static const Duration _idleForFullscreen = Duration(minutes: 2);
   // Filme aberto no painel de detalhes (no lugar da grade).
   Channel? _detail;
   // Série aberta no painel (no lugar da grade).
@@ -337,6 +345,10 @@ class _HomePageState extends State<HomePage> {
   void initState() {
     super.initState();
     _health; // começa a medir já
+    _autoFsTimer = Timer.periodic(
+      const Duration(seconds: 5),
+      (_) => _checkAutoFullscreen(),
+    );
     _completedSub = _player.stream.completed.listen((bool done) {
       if (done) _onVideoEnded();
     });
@@ -368,6 +380,7 @@ class _HomePageState extends State<HomePage> {
     _autoRefresh?.cancel();
     _videoWatch?.cancel();
     _completedSub?.cancel();
+    _autoFsTimer?.cancel();
     _nextTimer?.cancel();
     _health.dispose();
     _searchCtl.dispose();
@@ -890,6 +903,28 @@ class _HomePageState extends State<HomePage> {
     _playEpisode(ep.series, ep.eps, j);
   }
 
+  /// Vídeo novo: a contagem da tela cheia automática recomeça.
+  void _newVideo() {
+    _lastMouse = DateTime.now();
+    _autoFsOff = false;
+  }
+
+  void _checkAutoFullscreen() {
+    final VideoState? v = _videoKey.currentState;
+    if (!mounted || v == null) return;
+    final bool full = v.isFullscreen();
+    if (_autoFsOn && !full) {
+      // Entrou sozinha e o usuário saiu: não volta neste vídeo.
+      _autoFsOn = false;
+      _autoFsOff = true;
+      return;
+    }
+    if (full || _autoFsOff || !_player.state.playing) return;
+    if (DateTime.now().difference(_lastMouse) < _idleForFullscreen) return;
+    _autoFsOn = true;
+    unawaited(v.enterFullscreen());
+  }
+
   void _cancelNext() {
     _nextTimer?.cancel();
     _nextTimer = null;
@@ -1124,6 +1159,7 @@ class _HomePageState extends State<HomePage> {
 
   void _play(Channel c, {bool episode = false}) {
     _cancelNext();
+    _newVideo();
     // Tocar outra coisa sai do modo "episódio de série".
     if (!episode) _episode = null;
     if (c.isGroup) {
@@ -1232,6 +1268,7 @@ class _HomePageState extends State<HomePage> {
   /// e toca (se não abrir, tenta as outras).
   void _playVersion(Channel card, Channel version) {
     _cancelNext();
+    _newVideo();
     _episode = null;
     final ChannelVersion v = card.versions.firstWhere(
       (ChannelVersion x) => x.channel.url == version.url,
@@ -1321,85 +1358,92 @@ class _HomePageState extends State<HomePage> {
   @override
   Widget build(BuildContext context) {
     final Profile? cur = _profile;
-    return Scaffold(
-      appBar: AppBar(
-        bottom: _listBusy
-            ? PreferredSize(
-                preferredSize: const Size.fromHeight(24),
-                child: ValueListenableBuilder<String?>(
-                  valueListenable: _listProgress,
-                  builder: (BuildContext context, String? v, Widget? _) =>
-                      Column(
-                        children: <Widget>[
-                          const LinearProgressIndicator(minHeight: 2),
-                          Padding(
-                            padding: const EdgeInsets.symmetric(vertical: 3),
-                            child: Text(
-                              'Atualizando a lista: ${v ?? ''} '
-                              '(pode continuar usando)',
-                              style: Theme.of(context).textTheme.bodySmall,
+    // Qualquer movimento ou clique do mouse zera a contagem da tela cheia.
+    return Listener(
+      onPointerHover: (_) => _lastMouse = DateTime.now(),
+      onPointerMove: (_) => _lastMouse = DateTime.now(),
+      onPointerDown: (_) => _lastMouse = DateTime.now(),
+      onPointerSignal: (_) => _lastMouse = DateTime.now(),
+      child: Scaffold(
+        appBar: AppBar(
+          bottom: _listBusy
+              ? PreferredSize(
+                  preferredSize: const Size.fromHeight(24),
+                  child: ValueListenableBuilder<String?>(
+                    valueListenable: _listProgress,
+                    builder: (BuildContext context, String? v, Widget? _) =>
+                        Column(
+                          children: <Widget>[
+                            const LinearProgressIndicator(minHeight: 2),
+                            Padding(
+                              padding: const EdgeInsets.symmetric(vertical: 3),
+                              child: Text(
+                                'Atualizando a lista: ${v ?? ''} '
+                                '(pode continuar usando)',
+                                style: Theme.of(context).textTheme.bodySmall,
+                              ),
                             ),
-                          ),
-                        ],
-                      ),
+                          ],
+                        ),
+                  ),
+                )
+              : null,
+          title: Text(
+            _playing ?? 'Bukanero${cur == null ? '' : ' · ${cur.name}'}',
+          ),
+          actions: <Widget>[
+            IconButton(
+              tooltip: _listBusy
+                  ? 'Atualizando a lista...'
+                  : 'Atualizar a lista (em segundo plano)',
+              icon: const Icon(Icons.refresh),
+              onPressed: (cur == null || _listBusy) ? null : _refreshList,
+            ),
+            PopupMenuButton<String>(
+              tooltip: 'Perfis',
+              icon: const Icon(Icons.account_circle),
+              onSelected: _onMenu,
+              itemBuilder: (BuildContext context) => <PopupMenuEntry<String>>[
+                for (final Profile p in _profiles)
+                  CheckedPopupMenuItem<String>(
+                    value: 'p:${p.id}',
+                    checked: p.id == cur?.id,
+                    child: Text(p.name),
+                  ),
+                const PopupMenuDivider(),
+                const PopupMenuItem<String>(
+                  value: 'new',
+                  child: Text('Novo perfil...'),
+                ),
+                if (cur != null)
+                  const PopupMenuItem<String>(
+                    value: 'edit',
+                    child: Text('Editar perfil atual...'),
+                  ),
+                if (cur != null)
+                  const PopupMenuItem<String>(
+                    value: 'delete',
+                    child: Text('Excluir perfil atual'),
+                  ),
+              ],
+            ),
+            IconButton(
+              tooltip: 'Configurações',
+              icon: const Icon(Icons.settings_outlined),
+              onPressed: _openSettings,
+            ),
+            const SizedBox(width: 4),
+          ],
+        ),
+        body: _future == null
+            ? Center(
+                child: FilledButton(
+                  onPressed: _addProfile,
+                  child: const Text('Criar perfil'),
                 ),
               )
-            : null,
-        title: Text(
-          _playing ?? 'Bukanero${cur == null ? '' : ' · ${cur.name}'}',
-        ),
-        actions: <Widget>[
-          IconButton(
-            tooltip: _listBusy
-                ? 'Atualizando a lista...'
-                : 'Atualizar a lista (em segundo plano)',
-            icon: const Icon(Icons.refresh),
-            onPressed: (cur == null || _listBusy) ? null : _refreshList,
-          ),
-          PopupMenuButton<String>(
-            tooltip: 'Perfis',
-            icon: const Icon(Icons.account_circle),
-            onSelected: _onMenu,
-            itemBuilder: (BuildContext context) => <PopupMenuEntry<String>>[
-              for (final Profile p in _profiles)
-                CheckedPopupMenuItem<String>(
-                  value: 'p:${p.id}',
-                  checked: p.id == cur?.id,
-                  child: Text(p.name),
-                ),
-              const PopupMenuDivider(),
-              const PopupMenuItem<String>(
-                value: 'new',
-                child: Text('Novo perfil...'),
-              ),
-              if (cur != null)
-                const PopupMenuItem<String>(
-                  value: 'edit',
-                  child: Text('Editar perfil atual...'),
-                ),
-              if (cur != null)
-                const PopupMenuItem<String>(
-                  value: 'delete',
-                  child: Text('Excluir perfil atual'),
-                ),
-            ],
-          ),
-          IconButton(
-            tooltip: 'Configurações',
-            icon: const Icon(Icons.settings_outlined),
-            onPressed: _openSettings,
-          ),
-          const SizedBox(width: 4),
-        ],
+            : FutureBuilder<CatalogDb>(future: _future, builder: _content),
       ),
-      body: _future == null
-          ? Center(
-              child: FilledButton(
-                onPressed: _addProfile,
-                child: const Text('Criar perfil'),
-              ),
-            )
-          : FutureBuilder<CatalogDb>(future: _future, builder: _content),
     );
   }
 
@@ -1572,6 +1616,7 @@ class _HomePageState extends State<HomePage> {
                   Positioned.fill(
                     child: PlayerView(
                       controller: _video,
+                      videoKey: _videoKey,
                       episodeMode: _episode != null,
                       onPrevious: (_episode != null && _episode!.i > 0)
                           ? () => _stepEpisode(-1)

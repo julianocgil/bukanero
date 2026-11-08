@@ -13,10 +13,14 @@ class PlayerView extends StatelessWidget {
     this.episodeMode = false,
     this.onPrevious,
     this.onNext,
+    this.videoKey,
     super.key,
   });
 
   final VideoController controller;
+
+  /// Para a tela principal poder pôr e tirar a tela cheia.
+  final GlobalKey<VideoState>? videoKey;
 
   /// Tocando um episódio de série: mostra "Episódio anterior" e "Próximo
   /// episódio" à direita (apagados quando não há anterior ou próximo).
@@ -108,7 +112,7 @@ class PlayerView extends StatelessWidget {
     return MaterialDesktopVideoControlsTheme(
       normal: theme,
       fullscreen: theme,
-      child: Video(controller: controller),
+      child: Video(key: videoKey, controller: controller),
     );
   }
 }
