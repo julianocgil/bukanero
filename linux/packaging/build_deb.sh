@@ -16,11 +16,15 @@ BUNDLE=build/linux/x64/release/bundle
 
 rm -rf "$ROOT"
 mkdir -p "$ROOT/DEBIAN" "$ROOT/opt/bukanero" "$ROOT/usr/bin" \
-  "$ROOT/usr/share/applications" "$ROOT/usr/share/icons/hicolor/scalable/apps"
+  "$ROOT/usr/share/applications"
 cp -r "$BUNDLE"/. "$ROOT/opt/bukanero/"
 ln -s /opt/bukanero/bukanero "$ROOT/usr/bin/bukanero"
 cp "linux/packaging/$APP_ID.desktop" "$ROOT/usr/share/applications/"
-cp "linux/packaging/$APP_ID.svg" "$ROOT/usr/share/icons/hicolor/scalable/apps/"
+# A moeda em cada tamanho padrão (icons/<tamanho>.png; o 1024 é a original).
+for s in 16 24 32 48 64 128 256 512; do
+  mkdir -p "$ROOT/usr/share/icons/hicolor/${s}x${s}/apps"
+  cp "linux/packaging/icons/$s.png" "$ROOT/usr/share/icons/hicolor/${s}x${s}/apps/$APP_ID.png"
+done
 
 SIZE=$(du -sk "$ROOT" | cut -f1)
 cat > "$ROOT/DEBIAN/control" <<EOF
