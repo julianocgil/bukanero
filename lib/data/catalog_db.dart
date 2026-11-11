@@ -214,14 +214,15 @@ class CatalogDb {
     };
   }
 
-  /// Itens de uma categoria, com filtro opcional por nome (máx. [limit]).
+  /// Itens de uma categoria, com filtro opcional por nome (todos, se [limit]
+  /// for nulo).
   /// Nomes em [exclude] (ocultos pelo usuário) ficam de fora.
   List<Channel> items(
     Section s,
     String group,
     String query, {
     Set<String> exclude = const <String>{},
-    int limit = 2000,
+    int? limit,
   }) {
     final ResultSet rs = _db.select(
       'SELECT i.id AS id, i.name AS name, i.url AS url, i.logo AS logo, '
@@ -233,7 +234,7 @@ class CatalogDb {
         group,
         '%${_escapeLike(query)}%',
         r'\',
-        limit + exclude.length,
+        if (limit == null) -1 else limit + exclude.length,
       ],
     );
     final List<Channel> out = <Channel>[];
@@ -251,24 +252,26 @@ class CatalogDb {
           itemId: r['id'] as int,
         ),
       );
-      if (out.length >= limit) break;
+      if (limit != null && out.length >= limit) break;
     }
     return out;
   }
 
-  /// Busca pelo nome em todas as categorias de uma seção (máx. [limit]).
+  /// Busca pelo nome em todas as categorias de uma seção (todos, se [limit]
+  /// for nulo).
   /// [isHidden] recebe (categoria, nome) e decide se o item fica de fora.
   List<Channel> search(
     Section s,
     String query, {
     bool Function(String group, String name)? isHidden,
-    int limit = 500,
+    int? limit,
   }) {
-    const int batch = 2000;
+    // Sem limite, uma consulta só (OFFSET reordena tudo a cada bloco).
+    final int batch = limit == null ? -1 : 2000;
     final String like = '%${_escapeLike(query)}%';
     final List<Channel> out = <Channel>[];
     int offset = 0;
-    while (out.length < limit) {
+    while (limit == null || out.length < limit) {
       final ResultSet rs = _db.select(
         'SELECT i.id AS id, i.grp AS grp, i.name AS name, i.url AS url, '
         'i.logo AS logo, i.tvg_id AS tvg_id, $_rating AS rating '
@@ -292,9 +295,9 @@ class CatalogDb {
             itemId: r['id'] as int,
           ),
         );
-        if (out.length >= limit) break;
+        if (limit != null && out.length >= limit) break;
       }
-      if (rs.length < batch) break;
+      if (limit == null || rs.length < batch) break;
       offset += batch;
     }
     return out;

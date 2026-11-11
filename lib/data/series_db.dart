@@ -278,20 +278,25 @@ class SeriesDb {
     String group,
     String query, {
     Set<String> exclude = const <String>{},
-    int limit = 2000,
+    int? limit,
   }) {
     final ResultSet rs = _db.select(
       'SELECT s.title AS title, $_logo AS logo, s.url AS url, '
       's.episodes AS n, $_rating AS rating FROM series s $_join '
       'WHERE s.grp = ? AND s.title LIKE ? ESCAPE ? '
       'ORDER BY ${_orderInGroup(_eff)} LIMIT ?',
-      <Object?>[group, '%${_escapeLike(query)}%', r'\', limit + exclude.length],
+      <Object?>[
+        group,
+        '%${_escapeLike(query)}%',
+        r'\',
+        if (limit == null) -1 else limit + exclude.length,
+      ],
     );
     final List<Channel> out = <Channel>[];
     for (final Row r in rs) {
       if (exclude.contains(r['title'] as String)) continue;
       out.add(_entry(r, group));
-      if (out.length >= limit) break;
+      if (limit != null && out.length >= limit) break;
     }
     return out;
   }
@@ -301,13 +306,14 @@ class SeriesDb {
   List<Channel> search(
     String query, {
     bool Function(String group, String title)? isHidden,
-    int limit = 500,
+    int? limit,
   }) {
-    const int batch = 1000;
+    // Sem limite, uma consulta só (OFFSET reordena tudo a cada bloco).
+    final int batch = limit == null ? -1 : 1000;
     final String like = '%${_escapeLike(query)}%';
     final List<Channel> out = <Channel>[];
     int offset = 0;
-    while (out.length < limit) {
+    while (limit == null || out.length < limit) {
       final ResultSet rs = _db.select(
         'SELECT s.title AS title, s.grp AS grp, $_logo AS logo, '
         's.url AS url, SUM(s.episodes) AS n, MIN(s.pos) AS firstpos, '
@@ -320,9 +326,9 @@ class SeriesDb {
         final String group = r['grp'] as String;
         if (isHidden != null && isHidden(group, r['title'] as String)) continue;
         out.add(_entry(r, group));
-        if (out.length >= limit) break;
+        if (limit != null && out.length >= limit) break;
       }
-      if (rs.length < batch) break;
+      if (limit == null || rs.length < batch) break;
       offset += batch;
     }
     return out;

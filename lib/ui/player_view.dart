@@ -83,8 +83,8 @@ class PlayerView extends StatelessWidget {
     final MaterialDesktopVideoControlsThemeData theme =
         MaterialDesktopVideoControlsThemeData(
           bottomButtonBar: <Widget>[
-            _skipButton('Voltar 15 s', -15),
             const MaterialDesktopPlayOrPauseButton(),
+            _skipButton('Voltar 15 s', -15),
             _skipButton('Avançar 15 s', 15),
             _VolumeBar(player: _player),
             const MaterialDesktopPositionIndicator(),

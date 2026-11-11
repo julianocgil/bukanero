@@ -53,6 +53,11 @@ class UserData {
 
   final Database _db;
 
+  /// Sobe a cada mudança em ocultos, favoritos ou grupos separados, para a
+  /// tela saber quando refazer a lista.
+  int get revision => _revision;
+  int _revision = 0;
+
   Set<String> hiddenGroups(Section s) {
     final ResultSet rs = _db.select(
       'SELECT grp FROM hidden_groups WHERE section = ?',
@@ -70,6 +75,7 @@ class UserData {
   }
 
   void setGroupHidden(Section s, String group, {required bool hidden}) {
+    _revision++;
     if (hidden) {
       _db.execute(
         'INSERT OR IGNORE INTO hidden_groups(section, grp) VALUES (?, ?)',
@@ -89,6 +95,7 @@ class UserData {
     String name, {
     required bool hidden,
   }) {
+    _revision++;
     if (hidden) {
       _db.execute(
         'INSERT OR IGNORE INTO hidden_items(section, grp, name) '
@@ -180,6 +187,7 @@ class UserData {
   };
 
   void setSeparated(String key, {required bool separated}) {
+    _revision++;
     if (separated) {
       _db.execute('INSERT OR IGNORE INTO separated(key) VALUES (?)', <Object?>[
         key,
@@ -209,6 +217,7 @@ class UserData {
   ];
 
   void setFavorite(Section s, Channel c, {required bool favorite}) {
+    _revision++;
     if (favorite) {
       _db.execute(
         'INSERT OR REPLACE INTO favorite(section, url, name, at) '

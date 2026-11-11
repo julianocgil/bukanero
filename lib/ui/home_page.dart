@@ -87,6 +87,10 @@ class _HomePageState extends State<HomePage> {
   GroupIndex? _groups;
   bool _grouping = true;
   Set<String> _separated = <String>{};
+
+  // Última lista montada e o que ela levou em conta (ver _buildList).
+  List<Object?>? _listKey;
+  (List<Channel>, Set<String>)? _listCache;
   Future<void> _groupsTask = Future<void>.value();
   // Muda a cada play: uma tentativa antiga de outra versão para sozinha.
   int _playToken = 0;
@@ -718,6 +722,8 @@ class _HomePageState extends State<HomePage> {
       }
       cur.attachMeta(path);
       _series?.attachMeta(path);
+      // Notas e capas novas no mesmo catálogo: a lista guardada ficou velha.
+      _listCache = null;
       _reloadGroups();
       final (int, int) m = cur.metaCoverage();
       final (int, int) sr = _series?.metaCoverage() ?? (0, 0);
@@ -1015,7 +1021,6 @@ class _HomePageState extends State<HomePage> {
     List<Channel> channels = db.search(
       Section.live,
       '',
-      limit: 1 << 30,
       isHidden: _showHidden
           ? null
           : (String g, String n) =>
@@ -1505,6 +1510,96 @@ class _HomePageState extends State<HomePage> {
             .toList()
           ..sort();
 
+    // Montar todos os filmes leva ~150 ms: a lista só é refeita quando muda
+    // algo que entra nela, e não a cada redesenho da tela.
+    final List<Object?> listKey = <Object?>[
+      db,
+      _series,
+      _groups,
+      user,
+      user.revision,
+      _section,
+      _group,
+      _query,
+      curSort,
+      _showHidden,
+      _grouping,
+      _separated,
+    ];
+    final (List<Channel>, Set<String>) built =
+        _listCache != null && _sameKey(listKey, _listKey)
+        ? _listCache!
+        : (_listCache = _buildList(db, user, hiddenGroups));
+    _listKey = listKey;
+    final (List<Channel> items, Set<String> hiddenItems) = built;
+
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints box) {
+        // Normal: grade e vídeo lado a lado. Ampliada: a grade toma o lugar
+        // do vídeo, que continua tocando numa coluna estreita.
+        final double normal = _section == Section.live ? 440 : 640;
+        final double width = _wide
+            ? (box.maxWidth - _miniVideoWidth).clamp(normal, box.maxWidth)
+            : normal;
+        return Row(
+          children: <Widget>[
+            AnimatedContainer(
+              duration: const Duration(milliseconds: 220),
+              curve: Curves.easeOut,
+              width: width,
+              child: _itemColumn(
+                items,
+                hiddenItems,
+                groups: groups,
+                counts: counts,
+              ),
+            ),
+            const VerticalDivider(width: 1),
+            Expanded(
+              child: Stack(
+                children: <Widget>[
+                  Positioned.fill(
+                    child: PlayerView(
+                      controller: _video,
+                      videoKey: _videoKey,
+                      episodeMode: _episode != null,
+                      onPrevious: (_episode != null && _episode!.i > 0)
+                          ? () => _stepEpisode(-1)
+                          : null,
+                      onNext:
+                          (_episode != null &&
+                              _episode!.i + 1 < _episode!.eps.length)
+                          ? () => _stepEpisode(1)
+                          : null,
+                    ),
+                  ),
+                  if (_nextIn != null && _episode != null)
+                    Positioned(
+                      right: 16,
+                      bottom: 80,
+                      child: _nextEpisodeCard(),
+                    ),
+                  if (_perf.running)
+                    Positioned(
+                      top: 8,
+                      left: 8,
+                      child: PerfOverlay(monitor: _perf),
+                    ),
+                ],
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  /// Itens da tela (já agrupados) e os ocultos que valem para eles.
+  (List<Channel>, Set<String>) _buildList(
+    CatalogDb db,
+    UserData user,
+    Set<String> hiddenGroups,
+  ) {
     Set<String> hiddenItems;
     List<Channel> items;
     final String? group = _group;
@@ -1587,66 +1682,15 @@ class _HomePageState extends State<HomePage> {
                   allHidden.contains(hiddenKey(c.group ?? '', c.name)),
       );
     }
+    return (items, hiddenItems);
+  }
 
-    return LayoutBuilder(
-      builder: (BuildContext context, BoxConstraints box) {
-        // Normal: grade e vídeo lado a lado. Ampliada: a grade toma o lugar
-        // do vídeo, que continua tocando numa coluna estreita.
-        final double normal = _section == Section.live ? 440 : 640;
-        final double width = _wide
-            ? (box.maxWidth - _miniVideoWidth).clamp(normal, box.maxWidth)
-            : normal;
-        return Row(
-          children: <Widget>[
-            AnimatedContainer(
-              duration: const Duration(milliseconds: 220),
-              curve: Curves.easeOut,
-              width: width,
-              child: _itemColumn(
-                items,
-                hiddenItems,
-                groups: groups,
-                counts: counts,
-              ),
-            ),
-            const VerticalDivider(width: 1),
-            Expanded(
-              child: Stack(
-                children: <Widget>[
-                  Positioned.fill(
-                    child: PlayerView(
-                      controller: _video,
-                      videoKey: _videoKey,
-                      episodeMode: _episode != null,
-                      onPrevious: (_episode != null && _episode!.i > 0)
-                          ? () => _stepEpisode(-1)
-                          : null,
-                      onNext:
-                          (_episode != null &&
-                              _episode!.i + 1 < _episode!.eps.length)
-                          ? () => _stepEpisode(1)
-                          : null,
-                    ),
-                  ),
-                  if (_nextIn != null && _episode != null)
-                    Positioned(
-                      right: 16,
-                      bottom: 80,
-                      child: _nextEpisodeCard(),
-                    ),
-                  if (_perf.running)
-                    Positioned(
-                      top: 8,
-                      left: 8,
-                      child: PerfOverlay(monitor: _perf),
-                    ),
-                ],
-              ),
-            ),
-          ],
-        );
-      },
-    );
+  static bool _sameKey(List<Object?> a, List<Object?>? b) {
+    if (b == null || a.length != b.length) return false;
+    for (int i = 0; i < a.length; i++) {
+      if (a[i] != b[i]) return false;
+    }
+    return true;
   }
 
   static const double _miniVideoWidth = 360;
