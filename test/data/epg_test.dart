@@ -81,6 +81,43 @@ void main() {
     expect(epg.channelIds(), <String>{'canal.a'});
   });
 
+  test('duas grades para o mesmo canal: fica a primeira', () async {
+    final Directory dir = Directory.systemTemp.createTempSync('bukanero');
+    addTearDown(() => dir.deleteSync(recursive: true));
+    final DateTime now = DateTime.now();
+    String at(int min) => _xmltv(now.add(Duration(minutes: min)));
+    final File xml = File('${dir.path}/g.xml')
+      ..writeAsStringSync('''<?xml version="1.0" encoding="UTF-8"?>
+<tv>
+  <channel id="Canal.A"><display-name>A</display-name></channel>
+  <programme start="${at(-60)}" stop="${at(30)}" channel="Canal.A">
+    <title>Certo</title>
+  </programme>
+  <programme start="${at(29)}" stop="${at(90)}" channel="Canal.A">
+    <title>Depois</title>
+  </programme>
+  <programme start="${at(-80)}" stop="${at(-5)}" channel="Canal.A">
+    <title>Outra grade</title>
+  </programme>
+  <programme start="${at(-5)}" stop="${at(60)}" channel="Canal.A">
+    <title>Adiantado</title>
+  </programme>
+</tv>
+''');
+    final String dbPath = '${dir.path}/e.db';
+    await importEpg(<String>[xml.path], dbPath);
+
+    final EpgDb epg = EpgDb.tryOpen(dbPath)!;
+    addTearDown(epg.close);
+    final (Programme? cur, Programme? next) = epg.nowNext(
+      'canal.a',
+      now.millisecondsSinceEpoch ~/ 1000,
+    );
+    // O minuto em que "Certo" e "Depois" se encostam não conta.
+    expect(cur?.title, 'Certo');
+    expect(next?.title, 'Depois');
+  });
+
   test('chave de nome ignora qualidade, acentos e prefixo de país', () {
     expect(epgNameKey('BR: Canal Exemplo FHD'), 'canalexemplo');
     expect(epgNameKey('Canal Exemplo HD [Alt]'), 'canalexemplo');

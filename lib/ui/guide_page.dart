@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import '../data/epg.dart';
 import '../domain/channel.dart';
 import '../domain/section.dart';
+import 'category_picker.dart';
 import 'cover_image.dart';
 
 const double _rowH = 60;
@@ -37,11 +38,21 @@ Future<Channel?> showGuide(
   required List<Channel> channels,
   required EpgDb epg,
   String? group,
+  String query = '',
+  String? playingUrl,
+  Set<String>? favoriteUrls,
 }) {
   return showDialog<Channel>(
     context: context,
     builder: (BuildContext ctx) => Dialog.fullscreen(
-      child: _GuidePage(channels: channels, epg: epg, initialGroup: group),
+      child: _GuidePage(
+        channels: channels,
+        epg: epg,
+        initialGroup: group,
+        query: query,
+        playingUrl: playingUrl,
+        favoriteUrls: favoriteUrls,
+      ),
     ),
   );
 }
@@ -51,11 +62,23 @@ class _GuidePage extends StatefulWidget {
     required this.channels,
     required this.epg,
     this.initialGroup,
+    this.query = '',
+    this.playingUrl,
+    this.favoriteUrls,
   });
 
   final List<Channel> channels;
   final EpgDb epg;
+
+  /// O filtro da lista ao lado: categoria (ou Favoritos) e busca.
   final String? initialGroup;
+  final String query;
+
+  /// O canal tocando: abre centralizado nele, destacado.
+  final String? playingUrl;
+
+  /// Endereços favoritos; quando vem, o filtro ganha a opção Favoritos.
+  final Set<String>? favoriteUrls;
 
   @override
   State<_GuidePage> createState() => _GuidePageState();
@@ -71,10 +94,16 @@ class _GuidePageState extends State<_GuidePage> {
   bool _placed = false;
   late final List<_GuideRow> _all = _load();
   late final List<String> _groups = _groupsOf(_all);
-  late String? _group = _groups.contains(widget.initialGroup)
+  late String? _group =
+      (_groups.contains(widget.initialGroup) ||
+          (widget.initialGroup == favoritesGroup &&
+              widget.favoriteUrls != null))
       ? widget.initialGroup
       : null;
-  String _query = '';
+  late String _query = widget.query;
+  late final TextEditingController _search = TextEditingController(
+    text: widget.query,
+  );
   int _now = _nowSecs();
   Timer? _tick;
   final ScrollController _names = ScrollController();
@@ -94,6 +123,7 @@ class _GuidePageState extends State<_GuidePage> {
   @override
   void dispose() {
     _tick?.cancel();
+    _search.dispose();
     _names.dispose();
     _grid.dispose();
     _horiz.dispose();
@@ -119,19 +149,41 @@ class _GuidePageState extends State<_GuidePage> {
     return rows;
   }
 
+  // Um cartão agrupado junta versões de várias categorias.
+  static Iterable<Channel> _withVersions(Channel c) => <Channel>[
+    c,
+    for (final ChannelVersion v in c.versions) v.channel,
+  ];
+
   static List<String> _groupsOf(List<_GuideRow> rows) {
     final Set<String> s = <String>{
       for (final _GuideRow r in rows)
-        if (r.channel.group != null) r.channel.group!,
+        for (final Channel c in _withVersions(r.channel))
+          if (c.group != null) c.group!,
     };
     return s.toList()..sort();
+  }
+
+  bool _inGroup(Channel c) {
+    final String? g = _group;
+    if (g == null) return true;
+    if (g == favoritesGroup) {
+      final Set<String> favs = widget.favoriteUrls ?? const <String>{};
+      return _withVersions(c).any((Channel x) => favs.contains(x.url));
+    }
+    return _withVersions(c).any((Channel x) => x.group == g);
+  }
+
+  bool _isPlaying(Channel c) {
+    final String? u = widget.playingUrl;
+    return u != null && _withVersions(c).any((Channel x) => x.url == u);
   }
 
   List<_GuideRow> get _visible {
     final String q = normalize(_query.trim());
     return <_GuideRow>[
       for (final _GuideRow r in _all)
-        if ((_group == null || r.channel.group == _group) &&
+        if (_inGroup(r.channel) &&
             (q.isEmpty ||
                 normalize(r.channel.name).contains(q) ||
                 r.programmes.any(
@@ -217,6 +269,7 @@ class _GuidePageState extends State<_GuidePage> {
           SizedBox(
             width: 260,
             child: TextField(
+              controller: _search,
               decoration: const InputDecoration(
                 prefixIcon: Icon(Icons.search),
                 hintText: 'Canal ou programa',
@@ -234,6 +287,11 @@ class _GuidePageState extends State<_GuidePage> {
               const DropdownMenuItem<String?>(
                 child: Text('Todas as categorias'),
               ),
+              if (widget.favoriteUrls != null)
+                const DropdownMenuItem<String?>(
+                  value: favoritesGroup,
+                  child: Text('Favoritos'),
+                ),
               for (final String g in _groups)
                 DropdownMenuItem<String?>(value: g, child: Text(g)),
             ],
@@ -285,35 +343,45 @@ class _GuidePageState extends State<_GuidePage> {
             itemCount: rows.length,
             itemBuilder: (BuildContext context, int i) {
               final Channel c = rows[i].channel;
-              return InkWell(
-                onTap: () => Navigator.pop(context, c),
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 8),
-                  child: Row(
-                    children: <Widget>[
-                      SizedBox(
-                        width: 40,
-                        height: 40,
-                        child: ClipRRect(
-                          borderRadius: BorderRadius.circular(6),
-                          child: CoverImage(
-                            url: c.logo,
-                            icon: Icons.tv,
-                            fit: BoxFit.contain,
-                            cacheWidth: 80,
+              final bool playing = _isPlaying(c);
+              return Material(
+                color: playing
+                    ? t.colorScheme.primaryContainer
+                    : Colors.transparent,
+                child: InkWell(
+                  onTap: () => Navigator.pop(context, c),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                    child: Row(
+                      children: <Widget>[
+                        SizedBox(
+                          width: 40,
+                          height: 40,
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(6),
+                            child: CoverImage(
+                              url: c.logo,
+                              icon: Icons.tv,
+                              fit: BoxFit.contain,
+                              cacheWidth: 80,
+                            ),
                           ),
                         ),
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          c.name,
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                          style: t.textTheme.bodyMedium,
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            c.name,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: playing
+                                ? t.textTheme.bodyMedium?.copyWith(
+                                    fontWeight: FontWeight.w700,
+                                  )
+                                : t.textTheme.bodyMedium,
+                          ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
                 ),
               );
@@ -336,6 +404,19 @@ class _GuidePageState extends State<_GuidePage> {
             _horiz.jumpTo(
               (_x(_now) - 15 * _px).clamp(0, _horiz.position.maxScrollExtent),
             );
+            // E com o canal que está tocando no meio da tela.
+            final int i = rows.indexWhere(
+              (_GuideRow r) => _isPlaying(r.channel),
+            );
+            if (i >= 0 && _grid.hasClients) {
+              final ScrollPosition v = _grid.position;
+              _grid.jumpTo(
+                (i * _rowH - v.viewportDimension / 2 + _rowH / 2).clamp(
+                  0,
+                  v.maxScrollExtent,
+                ),
+              );
+            }
           });
         }
         return _timelineBody(rows);

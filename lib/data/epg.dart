@@ -191,6 +191,14 @@ Future<int> _importLocal(
     }
     db.execute('CREATE INDEX idx_prog ON prog(channel, start)');
     db.execute('CREATE INDEX idx_chan ON chan(nkey)');
+    // Alguns provedores mandam duas grades para o mesmo canal, com horários
+    // diferentes: fica a que veio primeiro (a outra deixava o "agora"
+    // adiantado). Programas vizinhos que encostam até 5 min são normais.
+    db.execute(
+      'DELETE FROM prog WHERE EXISTS (SELECT 1 FROM prog b '
+      'WHERE b.channel = prog.channel AND b.rowid < prog.rowid '
+      'AND MIN(b.stop, prog.stop) - MAX(b.start, prog.start) > 300)',
+    );
   } finally {
     db.close();
   }

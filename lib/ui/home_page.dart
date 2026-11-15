@@ -10,6 +10,7 @@ import '../data/catalog_db.dart';
 import '../data/download.dart';
 import '../data/epg.dart';
 import '../data/groups_db.dart';
+import '../data/list_builder.dart';
 import '../data/metadata.dart';
 import '../data/profile_store.dart';
 import '../data/series_db.dart';
@@ -90,7 +91,13 @@ class _HomePageState extends State<HomePage> {
 
   // Última lista montada e o que ela levou em conta (ver _buildList).
   List<Object?>? _listKey;
-  (List<Channel>, Set<String>)? _listCache;
+  List<Channel>? _listCache;
+  Section? _listSection;
+  String? _listGroup;
+
+  // Lista sendo montada noutro isolate, e a última que falhou (não insiste).
+  List<Object?>? _listPending;
+  List<Object?>? _listFailed;
   Future<void> _groupsTask = Future<void>.value();
   // Muda a cada play: uma tentativa antiga de outra versão para sozinha.
   int _playToken = 0;
@@ -723,7 +730,7 @@ class _HomePageState extends State<HomePage> {
       cur.attachMeta(path);
       _series?.attachMeta(path);
       // Notas e capas novas no mesmo catálogo: a lista guardada ficou velha.
-      _listCache = null;
+      _listKey = null;
       _reloadGroups();
       final (int, int) m = cur.metaCoverage();
       final (int, int) sr = _series?.metaCoverage() ?? (0, 0);
@@ -1034,7 +1041,13 @@ class _HomePageState extends State<HomePage> {
       context,
       channels: channels,
       epg: epg,
+      // O mesmo filtro da lista ao lado, quando ela é a dos canais.
       group: _section == Section.live ? _group : null,
+      query: _section == Section.live ? _query : '',
+      playingUrl: _playingUrl,
+      favoriteUrls: (_section == Section.live && _group == favoritesGroup)
+          ? user.favorites(Section.live)
+          : null,
     );
     if (c != null && mounted) _play(c);
   }
@@ -1510,28 +1523,62 @@ class _HomePageState extends State<HomePage> {
             .toList()
           ..sort();
 
-    // Montar todos os filmes leva ~150 ms: a lista só é refeita quando muda
-    // algo que entra nela, e não a cada redesenho da tela.
+    final Profile? p = _profile;
+    if (p == null) return const SizedBox.shrink();
+    final Section section = _section;
+    final String? group = _group;
+    final bool favMode = group == favoritesGroup;
+    final Set<String> allHidden = user.hiddenItemKeys(section);
+    final Set<String> hiddenItems = (group != null && !favMode)
+        ? user.hiddenItems(section, group)
+        : allHidden;
+
+    // A lista só é refeita quando muda algo que entra nela, e é montada
+    // noutro isolate (todos os filmes levam ~150 ms; num PC lento, bem mais):
+    // a tela troca na hora. Numa seção ou categoria nova aparece o
+    // carregando; na mesma (busca, ocultar...), a anterior até a nova chegar.
     final List<Object?> listKey = <Object?>[
       db,
       _series,
       _groups,
       user,
       user.revision,
-      _section,
-      _group,
+      section,
+      group,
       _query,
       curSort,
       _showHidden,
       _grouping,
       _separated,
     ];
-    final (List<Channel>, Set<String>) built =
-        _listCache != null && _sameKey(listKey, _listKey)
-        ? _listCache!
-        : (_listCache = _buildList(db, user, hiddenGroups));
-    _listKey = listKey;
-    final (List<Channel> items, Set<String> hiddenItems) = built;
+    final bool fresh = _listCache != null && _sameKey(listKey, _listKey);
+    if (!fresh) {
+      _requestList(
+        listKey,
+        ListRequest(
+          catalogPath: catalogDbPath(p),
+          seriesPath: _series == null ? null : seriesDbPath(p),
+          metaPath: db.hasMeta ? metaDbPath(p) : null,
+          groupsPath: (_grouping && _groups != null) ? groupsDbPath(p) : null,
+          section: section,
+          group: favMode ? null : group,
+          query: _query,
+          sort: curSort,
+          showHidden: _showHidden,
+          hiddenGroups: hiddenGroups,
+          hiddenItems: hiddenItems,
+          allHidden: allHidden,
+          separated: _separated,
+          favorites: favMode ? user.favoriteList(section) : null,
+        ),
+        group,
+      );
+    }
+    final bool loading =
+        !fresh && (_listSection != section || _listGroup != group);
+    final List<Channel> items = loading
+        ? const <Channel>[]
+        : (_listCache ?? const <Channel>[]);
 
     return LayoutBuilder(
       builder: (BuildContext context, BoxConstraints box) {
@@ -1550,6 +1597,7 @@ class _HomePageState extends State<HomePage> {
               child: _itemColumn(
                 items,
                 hiddenItems,
+                loading: loading,
                 groups: groups,
                 counts: counts,
               ),
@@ -1594,95 +1642,31 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  /// Itens da tela (já agrupados) e os ocultos que valem para eles.
-  (List<Channel>, Set<String>) _buildList(
-    CatalogDb db,
-    UserData user,
-    Set<String> hiddenGroups,
-  ) {
-    Set<String> hiddenItems;
-    List<Channel> items;
-    final String? group = _group;
-    if (group != null) {
-      hiddenItems = user.hiddenItems(_section, group);
-      items = db.items(
-        _section,
-        group,
-        _query,
-        exclude: _showHidden ? const <String>{} : hiddenItems,
-      );
-    } else {
-      hiddenItems = user.hiddenItemKeys(_section);
-      final Set<String> keys = hiddenItems;
-      items = db.search(
-        _section,
-        _query,
-        isHidden: _showHidden
-            ? null
-            : (String g, String n) =>
-                  hiddenGroups.contains(g) || keys.contains(hiddenKey(g, n)),
-      );
-    }
-
-    final SeriesDb? sdb = _series;
-    if (_section == Section.series && sdb != null) {
-      if (group != null) {
-        hiddenItems = user.hiddenItems(_section, group);
-        final Set<String> skip = hiddenItems;
-        items = sdb.list(
-          group,
-          _query,
-          exclude: _showHidden ? const <String>{} : skip,
-        );
-      } else {
-        hiddenItems = user.hiddenItemKeys(_section);
-        final Set<String> keys = hiddenItems;
-        items = sdb.search(
-          _query,
-          isHidden: _showHidden
-              ? null
-              : (String g, String n) =>
-                    hiddenGroups.contains(g) || keys.contains(hiddenKey(g, n)),
-        );
-      }
-    }
-
-    // Categoria Favoritos: busca no catálogo atual o que foi marcado.
-    final bool favMode = group == favoritesGroup;
-    if (favMode) {
-      hiddenItems = user.hiddenItemKeys(_section);
-      final List<(String, String)> favs = user.favoriteList(_section);
-      items = _section == Section.series
-          ? (sdb?.byTitles(<String>[for (final (_, String n) in favs) n]) ??
-                const <Channel>[])
-          : db.itemsByUrls(_section, <String>[
-              for (final (String u, _) in favs) u,
-            ]);
-      final String q = normalize(_query.trim());
-      if (q.isNotEmpty) {
-        items = items
-            .where((Channel c) => normalize(c.name).contains(q))
-            .toList();
-      }
-    }
-
-    // Versões do mesmo canal/filme viram um cartão só.
-    final GroupIndex? gi = _groups;
-    if (_grouping && gi != null && _section != Section.series) {
-      final Set<String> allHidden = user.hiddenItemKeys(_section);
-      items = gi.collapse(
-        items,
-        separated: _separated,
-        fetch: db.itemsByIds,
-        // Versões de outras categorias: fora as ocultas (item ou categoria).
-        isHidden: _showHidden
-            ? null
-            : (Channel c) =>
-                  hiddenGroups.contains(c.group) ||
-                  allHidden.contains(hiddenKey(c.group ?? '', c.name)),
-      );
-    }
-    return (items, hiddenItems);
+  /// Pede a lista de [key] ao isolate. Uma de cada vez: quando a atual
+  /// termina, a tela se redesenha e pede a mais nova, se ainda faltar.
+  void _requestList(List<Object?> key, ListRequest req, String? group) {
+    if (_listPending != null) return;
+    if (_listFailed != null && _sameKey(key, _listFailed)) return;
+    _listPending = key;
+    buildListInBackground(req).then(
+      (List<Channel> items) {
+        if (!mounted) return;
+        setState(() {
+          _listPending = null;
+          _listCache = items;
+          _listKey = key;
+          _listSection = req.section;
+          _listGroup = group;
+        });
+      },
+      onError: (Object _) {
+        if (!mounted) return;
+        setState(() {
+          _listPending = null;
+          _listFailed = key;
+        });
+      },
+    );
   }
 
   static bool _sameKey(List<Object?> a, List<Object?>? b) {
@@ -1806,6 +1790,7 @@ class _HomePageState extends State<HomePage> {
     Set<String> hiddenItems, {
     required List<String> groups,
     required Map<String, int> counts,
+    bool loading = false,
   }) {
     final ThemeData t = Theme.of(context);
     final bool live = _section == Section.live;
@@ -1838,7 +1823,9 @@ class _HomePageState extends State<HomePage> {
     }
 
     Widget body;
-    if (items.isEmpty) {
+    if (loading) {
+      body = const Center(child: CircularProgressIndicator());
+    } else if (items.isEmpty) {
       body = const Center(child: Text('Nada por aqui'));
     } else if (live && !_wide) {
       body = ListView.builder(
