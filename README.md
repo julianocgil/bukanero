@@ -24,7 +24,12 @@ only talks to the server of your own playlist.
 
 ## Install
 
-Get the latest version from the [Releases](https://github.com/julianocgil/bukanero/releases) page:
+[![Get it from the Snap Store](https://snapcraft.io/en/dark/install.svg)](https://snapcraft.io/bukanero)
+
+- **Ubuntu (Snap Store, with automatic updates):** search for "Bukanero" in the App Center, or run
+  `sudo snap install bukanero`.
+
+Or get the latest version from the [Releases](https://github.com/julianocgil/bukanero/releases) page:
 
 - **Any distribution (Flatpak):** download the `.flatpak` file and open it, or run
   `flatpak install --user bukanero_<version>_x86_64.flatpak`. The runtime comes from Flathub

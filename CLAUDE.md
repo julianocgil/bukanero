@@ -2,7 +2,7 @@
 
 Player IPTV pessoal para Linux desktop (Flutter + media_kit), privacy-first, sem SDKs de terceiros.
 Antes se chamava "Meu IPTV"; a pasta do projeto continua `~/meu_iptv`. App id: `io.github.julianocgil.Bukanero`.
-Código aberto (GPL-3.0), distribuído pelas Releases do GitHub (.deb e .flatpak). Idioma da conversa: português do Brasil.
+Código aberto (GPL-3.0), na Snap Store (https://snapcraft.io/bukanero) e nas Releases do GitHub (.deb e .flatpak). Idioma da conversa: português do Brasil.
 UI em 6 idiomas (pt, en, es, fr, de, it): textos em `lib/l10n/app_*.arb` (o modelo é o `app_pt.arb`),
 lidos pelo `tr` global de `lib/l10n/tr.dart`. Frase nova na tela entra nos 6 arquivos; nada de texto
 solto no código.
@@ -55,6 +55,10 @@ a pasta antiga `meu_iptv/` é movida para `bukanero/`.
   `sqlite-system.yaml`). Depois: `flatpak-builder --repo=repo ...` e
   `flatpak build-bundle --runtime-repo=https://dl.flathub.org/repo/flathub.flatpakrepo repo <arquivo> io.github.julianocgil.Bukanero master`.
   Capturas em `linux/packaging/screenshots/` (lista de demonstração com conteúdo livre, nunca a do usuário).
+- Snap: receita em `snap/snapcraft.yaml` (core24, libmpv2 do Ubuntu, código só do que está commitado).
+  Nova versão: subir `version` no snapcraft.yaml e no pubspec, commitar, `sg lxd -c "snapcraft pack"`,
+  testar com `sudo snap install --dangerous`, e `snapcraft upload --release=stable <arquivo>.snap`
+  (publicar só com o ok do usuário).
 - PC antigo (Intel HD 4000) lento em 4K: rodar `vainfo` lá e mandar o desempenho.csv; provável falta do
   driver `i965-va-driver` (a HD 4000 não usa o intel-media-va-driver) e HEVC 4K sem decodificação na placa.
   (O .deb 0.4.0 já recomenda `i965-va-driver`.)
