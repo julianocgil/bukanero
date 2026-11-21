@@ -1,0 +1,99 @@
+name: bukanero
+title: Bukanero
+base: core24
+version: '0.7.0'
+summary: Privacy-first IPTV player
+description: |
+  Bukanero plays the live channels, movies and series of the M3U playlists
+  you add, with a TV guide and a clean, fast interface.
+
+  Bukanero does not include, sell or recommend any content: it only plays
+  playlists and guides that you provide. It has no telemetry and no accounts,
+  and only talks to the server of your own playlist.
+
+  Features:
+  - Live channels, movies and series from M3U playlists, including
+    Xtream-style servers
+  - TV guide (XMLTV) with what is on now and a full timeline
+  - Smart grouping: the HD, FHD, 4K, dubbed and subtitled versions of the
+    same channel or movie become a single card
+  - A frozen live channel reconnects by itself and, if needed, switches to
+    another version
+  - Favorites, hidden items, continue watching, ratings and synopses when the
+    server provides them
+  - Seasons and episodes, with a next-episode countdown
+  - Several profiles, dark, black and light themes, and accent colors
+  - Hardware-accelerated video powered by mpv
+  - Available in English, Portuguese, Spanish, French, German and Italian
+license: GPL-3.0-or-later
+grade: stable
+confinement: strict
+icon: linux/packaging/icons/512.png
+website: https://github.com/julianocgil/bukanero
+source-code: https://github.com/julianocgil/bukanero
+issues: https://github.com/julianocgil/bukanero/issues
+contact: https://github.com/julianocgil/bukanero/issues
+
+apps:
+  bukanero:
+    command: bin/bukanero
+    desktop: usr/share/applications/bukanero.desktop
+    common-id: io.github.julianocgil.Bukanero
+    extensions: [gnome]
+    plugs:
+      - network
+      - audio-playback
+      # Listas e guias guardados em arquivo (o normal é uma URL).
+      - home
+      - removable-media
+
+parts:
+  # Flutter na mesma versão usada no desenvolvimento.
+  flutter:
+    plugin: nil
+    source: https://github.com/flutter/flutter.git
+    source-tag: 3.47.7
+    source-depth: 1
+    build-packages:
+      - clang
+      - cmake
+      - ninja-build
+      - pkg-config
+      - libgtk-3-dev
+      - curl
+      - git
+      - unzip
+      - xz-utils
+      - zip
+    override-build: |
+      mkdir -p $CRAFT_PART_INSTALL/flutter
+      cp -r . $CRAFT_PART_INSTALL/flutter/
+    prime:
+      - -*
+
+  bukanero:
+    after: [flutter]
+    plugin: nil
+    # Só o que está commitado (nada de build/ local nem arquivos fora do git).
+    source: .
+    source-type: git
+    build-packages:
+      - libmpv-dev
+      - libepoxy-dev
+    stage-packages:
+      - libmpv2
+    override-build: |
+      export PATH="$CRAFT_STAGE/flutter/bin:$PATH"
+      flutter config --no-analytics
+      flutter pub get
+      flutter build linux --release
+      mkdir -p $CRAFT_PART_INSTALL/bin
+      cp -r build/linux/*/release/bundle/* $CRAFT_PART_INSTALL/bin/
+      install -Dm644 linux/packaging/io.github.julianocgil.Bukanero.metainfo.xml \
+        $CRAFT_PART_INSTALL/usr/share/metainfo/io.github.julianocgil.Bukanero.metainfo.xml
+      # Atalho do menu com o ícone de dentro do snap.
+      sed -e 's|^Icon=.*|Icon=${SNAP}/meta/gui/icon.png|' \
+        linux/packaging/io.github.julianocgil.Bukanero.desktop \
+        > bukanero.desktop
+      install -Dm644 bukanero.desktop \
+        $CRAFT_PART_INSTALL/usr/share/applications/bukanero.desktop

@@ -56,3 +56,6 @@ app.*.map.json
 .flatpak-builder/
 linux/packaging/flatpak/builddir/
 linux/packaging/flatpak/repo/
+
+# Snap (compilação local)
+*.snap
