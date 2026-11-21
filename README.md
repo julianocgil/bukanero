@@ -24,8 +24,12 @@ only talks to the server of your own playlist.
 
 ## Install
 
-Download the `.deb` from the [Releases](https://github.com/julianocgil/bukanero/releases)
-page. A Flathub package is on the way.
+Get the latest version from the [Releases](https://github.com/julianocgil/bukanero/releases) page:
+
+- **Any distribution (Flatpak):** download the `.flatpak` file and open it, or run
+  `flatpak install --user bukanero_<version>_x86_64.flatpak`. The runtime comes from Flathub
+  automatically.
+- **Ubuntu / Debian:** download the `.deb` file and double-click it.
 
 ## Build from source
 
