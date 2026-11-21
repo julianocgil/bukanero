@@ -101,6 +101,24 @@ class _HomePageState extends State<HomePage> {
   Future<void> _groupsTask = Future<void>.value();
   // Muda a cada play: uma tentativa antiga de outra versão para sozinha.
   int _playToken = 0;
+
+  // Vigia de travadas do canal ao vivo: o que está tocando, as versões que
+  // ainda dá para tentar e há quanto tempo a imagem não anda.
+  ({
+    Channel card,
+    String url,
+    String label,
+    List<ChannelVersion> left,
+    Set<ChannelVersion> tried,
+  })?
+  _live;
+  static const Duration _stallLimit = Duration(seconds: 10);
+  Timer? _stallTimer;
+  Duration _lastPos = Duration.zero;
+  DateTime _lastMove = DateTime.now();
+  DateTime _liveOkSince = DateTime.now();
+  int _liveRetries = 0;
+  bool _recovering = false;
   // Episódio de série tocando: permite anterior/próximo e o "próximo
   // episódio em 15 s" no fim.
   ({Channel series, List<Episode> eps, int i})? _episode;
@@ -361,8 +379,18 @@ class _HomePageState extends State<HomePage> {
       (_) => _checkAutoFullscreen(),
     );
     _completedSub = _player.stream.completed.listen((bool done) {
-      if (done) _onVideoEnded();
+      if (!done) return;
+      // Canal ao vivo não "acaba": o servidor derrubou a transmissão.
+      if (_live != null) {
+        unawaited(_recoverLive());
+      } else {
+        _onVideoEnded();
+      }
     });
+    _stallTimer = Timer.periodic(
+      const Duration(seconds: 2),
+      (_) => _checkStall(),
+    );
     _videoWatch = VideoPriority.activeChanges.listen((bool active) {
       if (!active) _runDeferred();
     });
@@ -392,6 +420,7 @@ class _HomePageState extends State<HomePage> {
     _videoWatch?.cancel();
     _completedSub?.cancel();
     _autoFsTimer?.cancel();
+    _stallTimer?.cancel();
     _nextTimer?.cancel();
     _health.dispose();
     _searchCtl.dispose();
@@ -1185,11 +1214,96 @@ class _HomePageState extends State<HomePage> {
       return;
     }
     _playToken++;
+    _watchLive(_section == Section.live ? c : null, url: c.url, label: c.name);
     setState(() {
       _playing = c.name;
       _playingUrl = c.url;
     });
     _player.open(Media(c.url));
+  }
+
+  /// Passa a vigiar [card] (ao vivo) ou, com null, para de vigiar.
+  void _watchLive(
+    Channel? card, {
+    String url = '',
+    String label = '',
+    List<ChannelVersion> left = const <ChannelVersion>[],
+    Set<ChannelVersion> tried = const <ChannelVersion>{},
+  }) {
+    _live = card == null
+        ? null
+        : (card: card, url: url, label: label, left: left, tried: tried);
+    _liveRetries = 0;
+    _liveOkSince = _lastMove = DateTime.now();
+  }
+
+  /// A cada 2 s: se o canal ao vivo está "tocando" mas a imagem não anda há
+  /// [_stallLimit], tenta recuperar. Pausa sua não conta.
+  void _checkStall() {
+    if (_live == null || _recovering) return;
+    final DateTime now = DateTime.now();
+    final Duration pos = _player.state.position;
+    if (pos != _lastPos) {
+      _lastPos = pos;
+      _lastMove = now;
+      // Um minuto sem travar: a próxima travada começa reconectando de novo.
+      if (now.difference(_liveOkSince) > const Duration(minutes: 1)) {
+        _liveRetries = 0;
+      }
+      return;
+    }
+    if (!_player.state.playing) {
+      _lastMove = now;
+      return;
+    }
+    // Ainda abrindo (nada tocou): dá mais tempo antes de chamar de travada.
+    final Duration limit = pos == Duration.zero
+        ? const Duration(seconds: 20)
+        : _stallLimit;
+    if (now.difference(_lastMove) >= limit) unawaited(_recoverLive());
+  }
+
+  /// Canal travado: reconecta (1 vez se há outras versões, até 3 se não há);
+  /// se não voltar, ou travar de novo no primeiro minuto, troca de versão.
+  Future<void> _recoverLive() async {
+    final ({
+      Channel card,
+      String url,
+      String label,
+      List<ChannelVersion> left,
+      Set<ChannelVersion> tried,
+    })?
+    live = _live;
+    if (live == null || _recovering || !mounted) return;
+    _recovering = true;
+    try {
+      final int max = live.left.isEmpty ? 3 : 1;
+      while (_liveRetries < max) {
+        _liveRetries++;
+        _toast('"${live.card.name}" travou. Reconectando...');
+        final int token = ++_playToken;
+        final Future<bool> started = _waitStart();
+        await _player.open(Media(live.url));
+        final bool ok = await started;
+        if (token != _playToken || !mounted || !identical(live, _live)) {
+          return;
+        }
+        if (ok) {
+          _liveOkSince = DateTime.now();
+          return;
+        }
+      }
+      if (live.left.isEmpty) {
+        _toast('"${live.card.name}" não voltou. Tente de novo daqui a pouco.');
+        _live = null;
+        return;
+      }
+      _toast('${live.label} travou. Mudando para ${live.left.first.label}...');
+      unawaited(_playGroup(live.card, live.left, 0, tried: live.tried));
+    } finally {
+      _recovering = false;
+      _lastMove = DateTime.now();
+    }
   }
 
   // As escolhas de versão feitas à mão valem para TODOS os cartões da
@@ -1221,6 +1335,7 @@ class _HomePageState extends State<HomePage> {
   }) async {
     final int token = ++_playToken;
     final ChannelVersion v = order[i];
+    _live = null;
     // Filmes: trocar sozinho poderia mudar de dublado para legendado; o app
     // pergunta. Canais ao vivo: as versões são o mesmo sinal, troca sozinho.
     final bool ask = _section != Section.live;
@@ -1231,8 +1346,20 @@ class _HomePageState extends State<HomePage> {
     final Future<bool> started = _waitStart();
     await _player.open(Media(v.channel.url));
     final bool ok = await started;
-    if (ok || token != _playToken || !mounted) return;
     final Set<ChannelVersion> done = <ChannelVersion>{...tried, v};
+    if (ok && token == _playToken && mounted && !ask) {
+      _watchLive(
+        card,
+        url: v.channel.url,
+        label: v.label,
+        left: <ChannelVersion>[
+          for (final ChannelVersion x in order)
+            if (!done.contains(x)) x,
+        ],
+        tried: done,
+      );
+    }
+    if (ok || token != _playToken || !mounted) return;
     final List<ChannelVersion> left = <ChannelVersion>[
       for (final ChannelVersion x in order)
         if (!done.contains(x)) x,
