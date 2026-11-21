@@ -91,7 +91,7 @@
   <releases>
     <release version="0.7.0" date="2026-11-22">
       <description>
-        <p>First release on Flathub.</p>
+        <p>First Flatpak release.</p>
         <ul>
           <li>Interface in six languages</li>
           <li>Frozen live channels reconnect or switch to another version</li>
