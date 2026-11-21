@@ -6,6 +6,7 @@ import 'package:sqlite3/sqlite3.dart';
 
 import '../domain/section.dart';
 import 'download.dart';
+import '../l10n/tr.dart';
 
 /// Servidor e credenciais da API (`player_api.php`) da lista.
 class ApiAccess {
@@ -289,7 +290,7 @@ Future<void> _parseAndBuild(
       );
       return data is List<Object?> ? data : <Object?>[];
     } on FormatException {
-      parseError = 'resposta do servidor não reconhecida';
+      parseError = tr.errServerResponse;
       return <Object?>[];
     }
   }
@@ -297,9 +298,7 @@ Future<void> _parseAndBuild(
   final List<Object?> vod = await read(vodPath);
   final List<Object?> series = await read(seriesPath);
   if (vod.isEmpty && series.isEmpty) {
-    throw DownloadException(
-      downloadError ?? parseError ?? 'o servidor não devolveu notas nem datas',
-    );
+    throw DownloadException(downloadError ?? parseError ?? tr.errNoMeta);
   }
   buildMetadataDb(dbPath, vod, series);
 }

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../data/app_settings.dart';
 import 'app_theme.dart';
+import '../l10n/tr.dart';
 
 /// O que a tela de Configurações lê e faz na tela principal.
 class SettingsActions {
@@ -40,13 +41,13 @@ class SettingsActions {
   final VoidCallback onEditProfile;
 }
 
-const Map<int, String> _refreshOptions = <int, String>{
-  6: 'A cada 6 horas',
-  12: 'A cada 12 horas',
-  24: 'A cada 24 horas',
-  48: 'A cada 2 dias',
-  168: 'Uma vez por semana',
-  0: 'Nunca (só quando eu pedir)',
+Map<int, String> get _refreshOptions => <int, String>{
+  6: tr.refresh6h,
+  12: tr.refresh12h,
+  24: tr.refresh24h,
+  48: tr.refresh2d,
+  168: tr.refreshWeekly,
+  0: tr.refreshNever,
 };
 
 Future<void> showSettings(BuildContext context, SettingsActions a) {
@@ -80,35 +81,35 @@ Future<void> showSettings(BuildContext context, SettingsActions a) {
 
         final int hours = a.refreshHours();
         return AlertDialog(
-          title: const Text('Configurações'),
+          title: Text(tr.settings),
           content: SizedBox(
             width: 560,
             child: SingleChildScrollView(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: <Widget>[
-                  section('Aparência'),
+                  section(tr.appearance),
                   SegmentedButton<String>(
-                    segments: const <ButtonSegment<String>>[
+                    segments: <ButtonSegment<String>>[
                       ButtonSegment<String>(
                         value: 'dark',
                         icon: Icon(Icons.dark_mode_outlined),
-                        label: Text('Azul'),
+                        label: Text(tr.themeNavy),
                       ),
                       ButtonSegment<String>(
                         value: 'black',
                         icon: Icon(Icons.contrast),
-                        label: Text('Preto'),
+                        label: Text(tr.themeBlack),
                       ),
                       ButtonSegment<String>(
                         value: 'light',
                         icon: Icon(Icons.light_mode_outlined),
-                        label: Text('Claro'),
+                        label: Text(tr.themeLight),
                       ),
                       ButtonSegment<String>(
                         value: 'system',
                         icon: Icon(Icons.brightness_auto_outlined),
-                        label: Text('Do sistema'),
+                        label: Text(tr.themeSystem),
                       ),
                     ],
                     selected: <String>{s.theme},
@@ -127,10 +128,10 @@ Future<void> showSettings(BuildContext context, SettingsActions a) {
                     spacing: 10,
                     runSpacing: 8,
                     children: <Widget>[
-                      for (final MapEntry<String, (String, Color)> e
+                      for (final MapEntry<String, Color> e
                           in accentColors.entries)
                         Tooltip(
-                          message: e.value.$1,
+                          message: accentName(e.key),
                           child: InkWell(
                             customBorder: const CircleBorder(),
                             onTap: () => setLook(s.copyWith(accent: e.key)),
@@ -138,7 +139,7 @@ Future<void> showSettings(BuildContext context, SettingsActions a) {
                               width: 34,
                               height: 34,
                               decoration: BoxDecoration(
-                                color: e.value.$2,
+                                color: e.value,
                                 shape: BoxShape.circle,
                                 border: Border.all(
                                   color: s.accent == e.key
@@ -155,14 +156,32 @@ Future<void> showSettings(BuildContext context, SettingsActions a) {
                         ),
                     ],
                   ),
-                  section('Lista'),
+                  const SizedBox(height: 16),
+                  DropdownButtonFormField<String>(
+                    initialValue: s.language,
+                    decoration: InputDecoration(labelText: tr.language),
+                    items: <DropdownMenuItem<String>>[
+                      DropdownMenuItem<String>(
+                        value: 'system',
+                        child: Text(tr.languageSystem),
+                      ),
+                      for (final MapEntry<String, String> e
+                          in languageNames.entries)
+                        DropdownMenuItem<String>(
+                          value: e.key,
+                          child: Text(e.value),
+                        ),
+                    ],
+                    onChanged: (String? v) {
+                      if (v != null) setLook(s.copyWith(language: v));
+                    },
+                  ),
+                  section(tr.listSection),
                   DropdownButtonFormField<int>(
                     initialValue: _refreshOptions.containsKey(hours)
                         ? hours
                         : 24,
-                    decoration: const InputDecoration(
-                      labelText: 'Atualizar a lista sozinho',
-                    ),
+                    decoration: InputDecoration(labelText: tr.autoRefreshList),
                     items: <DropdownMenuItem<int>>[
                       for (final MapEntry<int, String> e
                           in _refreshOptions.entries)
@@ -182,23 +201,21 @@ Future<void> showSettings(BuildContext context, SettingsActions a) {
                     children: <Widget>[
                       OutlinedButton.icon(
                         icon: const Icon(Icons.refresh),
-                        label: const Text('Atualizar a lista agora'),
+                        label: Text(tr.refreshListNow),
                         onPressed: closeThen(a.onRefreshList),
                       ),
                       OutlinedButton.icon(
                         icon: const Icon(Icons.event_note),
-                        label: const Text('Atualizar o guia agora'),
+                        label: Text(tr.refreshGuideNow),
                         onPressed: closeThen(a.onRefreshGuide),
                       ),
                     ],
                   ),
-                  section('Versões repetidas'),
+                  section(tr.repeatedVersions),
                   SwitchListTile(
                     contentPadding: EdgeInsets.zero,
-                    title: const Text('Agrupar versões repetidas'),
-                    subtitle: const Text(
-                      'HD, FHD, 4K, dublado, legendado... num cartão só',
-                    ),
+                    title: Text(tr.groupRepeatedVersions),
+                    subtitle: Text(tr.groupingSubtitle),
                     value: a.grouping(),
                     onChanged: (_) {
                       a.onGrouping();
@@ -211,20 +228,18 @@ Future<void> showSettings(BuildContext context, SettingsActions a) {
                     children: <Widget>[
                       OutlinedButton.icon(
                         icon: const Icon(Icons.fact_check_outlined),
-                        label: const Text('Revisar agrupamentos'),
+                        label: Text(tr.reviewGroups),
                         onPressed: closeThen(a.onReview),
                       ),
                       if (a.separatedCount() > 0)
                         OutlinedButton.icon(
                           icon: const Icon(Icons.call_split),
-                          label: Text(
-                            'Grupos separados (${a.separatedCount()})',
-                          ),
+                          label: Text(tr.separatedGroups(a.separatedCount())),
                           onPressed: closeThen(a.onSeparated),
                         ),
                       OutlinedButton.icon(
                         icon: const Icon(Icons.restart_alt),
-                        label: const Text('Esquecer versões preferidas'),
+                        label: Text(tr.forgetPreferred),
                         onPressed: () {
                           a.onResetVersions();
                           refresh(() {});
@@ -232,10 +247,10 @@ Future<void> showSettings(BuildContext context, SettingsActions a) {
                       ),
                     ],
                   ),
-                  section('Exibição'),
+                  section(tr.display),
                   SwitchListTile(
                     contentPadding: EdgeInsets.zero,
-                    title: const Text('Mostrar itens ocultos'),
+                    title: Text(tr.showHidden),
                     value: a.showHidden(),
                     onChanged: (_) {
                       a.onShowHidden();
@@ -244,20 +259,18 @@ Future<void> showSettings(BuildContext context, SettingsActions a) {
                   ),
                   SwitchListTile(
                     contentPadding: EdgeInsets.zero,
-                    title: const Text('Monitor de desempenho (FPS)'),
-                    subtitle: const Text(
-                      'Painel sobre o vídeo e histórico em desempenho.csv',
-                    ),
+                    title: Text(tr.perfMonitor),
+                    subtitle: Text(tr.perfMonitorSubtitle),
                     value: a.perfOn(),
                     onChanged: (_) {
                       a.onPerf();
                       refresh(() {});
                     },
                   ),
-                  section('Perfil'),
+                  section(tr.profileSection),
                   OutlinedButton.icon(
                     icon: const Icon(Icons.manage_accounts_outlined),
-                    label: const Text('Editar perfil atual'),
+                    label: Text(tr.editCurrentProfile),
                     onPressed: closeThen(a.onEditProfile),
                   ),
                 ],
@@ -267,7 +280,7 @@ Future<void> showSettings(BuildContext context, SettingsActions a) {
           actions: <Widget>[
             FilledButton(
               onPressed: () => Navigator.pop(ctx),
-              child: const Text('Fechar'),
+              child: Text(tr.close),
             ),
           ],
         );

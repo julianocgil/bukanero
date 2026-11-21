@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../data/epg.dart';
 import '../domain/channel.dart';
 import 'cover_image.dart';
+import '../l10n/tr.dart';
 
 /// Menu ⋮ para ocultar ou reexibir um item ou uma categoria.
 class HideMenu extends StatelessWidget {
@@ -22,7 +23,7 @@ class HideMenu extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return PopupMenuButton<int>(
-      tooltip: 'Opções',
+      tooltip: tr.options,
       iconSize: 20,
       padding: EdgeInsets.zero,
       icon: const Icon(Icons.more_vert),
@@ -34,18 +35,18 @@ class HideMenu extends StatelessWidget {
             children: <Widget>[
               Icon(hidden ? Icons.visibility : Icons.visibility_off, size: 18),
               const SizedBox(width: 8),
-              Text(hidden ? 'Reexibir' : 'Ocultar'),
+              Text(hidden ? tr.unhide : tr.hide),
             ],
           ),
         ),
         if (onRegroup != null)
-          const PopupMenuItem<int>(
+          PopupMenuItem<int>(
             value: 1,
             child: Row(
               children: <Widget>[
                 Icon(Icons.merge_type, size: 18),
                 SizedBox(width: 8),
-                Text('Juntar as versões de novo'),
+                Text(tr.regroupVersions),
               ],
             ),
           ),
@@ -72,7 +73,7 @@ class FavoriteButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final Widget button = IconButton(
-      tooltip: favorite ? 'Tirar dos favoritos' : 'Favoritar',
+      tooltip: favorite ? tr.removeFavorite : tr.addFavorite,
       iconSize: 18,
       visualDensity: VisualDensity.compact,
       color: favorite
@@ -121,7 +122,7 @@ class VersionsMenu extends StatelessWidget {
         ? Colors.white
         : t.colorScheme.onSecondaryContainer;
     return PopupMenuButton<int>(
-      tooltip: 'Escolher a versão',
+      tooltip: tr.chooseVersion,
       onSelected: (int i) =>
           i < 0 ? onSeparate() : onPick(channel.versions[i].channel),
       itemBuilder: (BuildContext context) => <PopupMenuEntry<int>>[
@@ -132,25 +133,25 @@ class VersionsMenu extends StatelessWidget {
               children: <Widget>[
                 const Icon(Icons.play_arrow, size: 18),
                 const SizedBox(width: 8),
-                Text(channel.versions[i].label),
+                Text(versionName(channel.versions[i].label)),
                 if (channel.versions[i].channel.name == chosen) ...<Widget>[
                   const SizedBox(width: 8),
-                  Text('(sua preferência)', style: t.textTheme.bodySmall),
+                  Text(tr.yourPreference, style: t.textTheme.bodySmall),
                 ] else if (i == 0 && chosen == null) ...<Widget>[
                   const SizedBox(width: 8),
-                  Text('(automática)', style: t.textTheme.bodySmall),
+                  Text(tr.automatic, style: t.textTheme.bodySmall),
                 ],
               ],
             ),
           ),
         const PopupMenuDivider(),
-        const PopupMenuItem<int>(
+        PopupMenuItem<int>(
           value: -1,
           child: Row(
             children: <Widget>[
               Icon(Icons.call_split, size: 18),
               SizedBox(width: 8),
-              Text('Separar este grupo'),
+              Text(tr.separateGroup),
             ],
           ),
         ),
@@ -451,7 +452,7 @@ class PosterCard extends StatelessWidget {
                         ),
                         child: onRemove != null
                             ? IconButton(
-                                tooltip: 'Tirar dos recentes',
+                                tooltip: tr.removeFromRecent,
                                 iconSize: 18,
                                 visualDensity: VisualDensity.compact,
                                 color: Colors.white,

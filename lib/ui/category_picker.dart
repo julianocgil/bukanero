@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../domain/section.dart';
 import 'item_views.dart';
+import '../l10n/tr.dart';
 
 /// Categoria especial com os favoritos da seção.
 const String favoritesGroup = '\u0001favoritos';
@@ -88,7 +89,7 @@ Future<CategoryChoice?> showCategoryPicker(
   return showGeneralDialog<CategoryChoice>(
     context: context,
     barrierDismissible: true,
-    barrierLabel: 'Fechar',
+    barrierLabel: tr.close,
     barrierColor: Colors.black54,
     transitionDuration: const Duration(milliseconds: 180),
     pageBuilder: (BuildContext ctx, Animation<double> a, Animation<double> b) =>
@@ -192,11 +193,11 @@ class _CategoryPanelState extends State<_CategoryPanel> {
                         ),
                       ),
                       Text(
-                        '${widget.groups.length} categorias',
+                        tr.categoriesCount(widget.groups.length),
                         style: t.textTheme.bodySmall,
                       ),
                       IconButton(
-                        tooltip: 'Fechar',
+                        tooltip: tr.close,
                         icon: const Icon(Icons.close),
                         onPressed: () => Navigator.pop(context),
                       ),
@@ -207,9 +208,9 @@ class _CategoryPanelState extends State<_CategoryPanel> {
                   padding: const EdgeInsets.symmetric(horizontal: 20),
                   child: TextField(
                     autofocus: true,
-                    decoration: const InputDecoration(
+                    decoration: InputDecoration(
                       prefixIcon: Icon(Icons.search),
-                      hintText: 'Procurar categoria',
+                      hintText: tr.searchCategory,
                       isDense: true,
                     ),
                     onChanged: (String v) => setState(() => _query = v),
@@ -235,7 +236,7 @@ class _CategoryPanelState extends State<_CategoryPanel> {
                       if (_query.isEmpty && i == 0) {
                         return _tile(
                           t,
-                          label: 'Todas as categorias',
+                          label: tr.allCategories,
                           count: total,
                           selected: widget.selected == null,
                           icon: Icons.apps,
@@ -245,7 +246,7 @@ class _CategoryPanelState extends State<_CategoryPanel> {
                       if (_query.isEmpty && i == 1) {
                         return _tile(
                           t,
-                          label: 'Favoritos',
+                          label: tr.favorites,
                           count: widget.favorites,
                           selected: widget.selected == favoritesGroup,
                           icon: Icons.favorite,

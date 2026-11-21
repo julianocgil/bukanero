@@ -35,6 +35,7 @@ import 'settings_dialog.dart';
 import 'video_health.dart';
 import 'profile_dialog.dart';
 import 'series_dialog.dart';
+import '../l10n/tr.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -204,7 +205,7 @@ class _HomePageState extends State<HomePage> {
     if (key == null) return;
     _user?.setSeparated(key, separated: true);
     setState(() => _separated = <String>{..._separated, key});
-    _toast('Grupo "${c.name}" separado. As versões aparecem soltas.');
+    _toast(tr.groupSeparated(c.name));
   }
 
   /// Chave do grupo separado de onde [c] veio, se o agrupamento está ligado.
@@ -215,11 +216,7 @@ class _HomePageState extends State<HomePage> {
     _user?.setSeparated(key, separated: false);
     setState(() => _separated = <String>{..._separated}..remove(key));
     final String? name = _groups?.nameOfKey(key);
-    _toast(
-      name == null
-          ? 'Versões juntadas de novo.'
-          : 'As versões de "$name" foram juntadas de novo.',
-    );
+    _toast(name == null ? tr.versionsRegrouped : tr.versionsOfRegrouped(name));
   }
 
   /// Lista os grupos separados, para juntar de novo um a um ou todos.
@@ -235,11 +232,11 @@ class _HomePageState extends State<HomePage> {
               ),
             );
           return AlertDialog(
-            title: Text('Grupos separados (${keys.length})'),
+            title: Text(tr.separatedGroups(keys.length)),
             content: SizedBox(
               width: 460,
               child: keys.isEmpty
-                  ? const Text('Nenhum grupo separado.')
+                  ? Text(tr.noSeparatedGroups)
                   : ListView(
                       shrinkWrap: true,
                       children: <Widget>[
@@ -256,7 +253,7 @@ class _HomePageState extends State<HomePage> {
                             ),
                             trailing: TextButton.icon(
                               icon: const Icon(Icons.merge_type),
-                              label: const Text('Reagrupar'),
+                              label: Text(tr.regroup),
                               onPressed: () {
                                 _regroup(k);
                                 refresh(() {});
@@ -275,13 +272,13 @@ class _HomePageState extends State<HomePage> {
                     }
                     setState(() => _separated = <String>{});
                     Navigator.pop(ctx);
-                    _toast('Todos os grupos foram juntados de novo.');
+                    _toast(tr.allRegrouped);
                   },
-                  child: const Text('Reagrupar todos'),
+                  child: Text(tr.regroupAll),
                 ),
               FilledButton(
                 onPressed: () => Navigator.pop(ctx),
-                child: const Text('Fechar'),
+                child: Text(tr.close),
               ),
             ],
           );
@@ -311,7 +308,7 @@ class _HomePageState extends State<HomePage> {
   void _togglePerf() {
     setState(_perf.toggle);
     final String? path = _perf.logPath;
-    if (path != null) _toast('Gravando o histórico em $path');
+    if (path != null) _toast(tr.perfLogAt(path));
   }
 
   void _setRefreshHours(int h) {
@@ -359,7 +356,7 @@ class _HomePageState extends State<HomePage> {
           _user?.setPref('ver.choices.${s.name}', '');
         }
         setState(() {});
-        _toast('As versões preferidas foram esquecidas.');
+        _toast(tr.preferredForgotten);
       },
       onEditProfile: () => unawaited(_editProfile()),
     ),
@@ -501,7 +498,7 @@ class _HomePageState extends State<HomePage> {
         } on DownloadException catch (e) {
           // Sem lista nova, mas com a anterior guardada: segue com ela.
           if (!cache.existsSync()) rethrow;
-          _toast('Não consegui baixar a lista ($e). Usando a lista anterior.');
+          _toast(tr.listDownloadFailedUsingOld('$e'));
         } finally {
           _listProgress.value = null;
         }
@@ -546,8 +543,8 @@ class _HomePageState extends State<HomePage> {
         if (step == shown) return;
         shown = step;
         _listProgress.value = total == null
-            ? '${_mb(received)} MB baixados'
-            : '${_mb(received)} de ${_mb(total)} MB';
+            ? tr.mbDownloaded(_mb(received))
+            : tr.mbOf(_mb(received), _mb(total));
       },
     );
   }
@@ -585,7 +582,7 @@ class _HomePageState extends State<HomePage> {
     final bool remote = src.startsWith('http://') || src.startsWith('https://');
     final int gen = _gen;
     setState(() => _listBusy = true);
-    _listProgress.value = 'Na fila...';
+    _listProgress.value = tr.queued;
     await _jobs.run(() => _doRefreshList(p, src, remote, gen, auto: auto));
   }
 
@@ -596,7 +593,7 @@ class _HomePageState extends State<HomePage> {
     int gen, {
     required bool auto,
   }) async {
-    _listProgress.value = 'Conectando ao servidor...';
+    _listProgress.value = tr.connecting;
     try {
       if (gen != _gen) throw const DownloadCancelled();
       String m3u = src;
@@ -605,7 +602,7 @@ class _HomePageState extends State<HomePage> {
         await _downloadList(p, cache);
         m3u = cache.path;
       }
-      _listProgress.value = 'Preparando a lista nova...';
+      _listProgress.value = tr.preparingList;
       final String dbPath = catalogDbPath(p);
       if (!catalogIsFresh(dbPath, m3u)) await importCatalog(m3u, dbPath);
       await ensureSeriesIndex(dbPath, seriesDbPath(p));
@@ -613,16 +610,13 @@ class _HomePageState extends State<HomePage> {
       _swapCatalog(p, dbPath);
       _reloadGroups();
       _autoFailedAt = null;
-      _toast(auto ? 'Lista atualizada automaticamente.' : 'Lista atualizada.');
+      _toast(auto ? tr.listUpdatedAuto : tr.listUpdated);
       unawaited(_refreshMeta(force: true));
     } on DownloadCancelled {
       // Perfil trocado ou apagado: nada a avisar.
     } on Object catch (e) {
       if (auto) _autoFailedAt = DateTime.now();
-      _toast(
-        'Não consegui atualizar a lista ($e). Continuo com a anterior'
-        '${auto ? '; tento de novo daqui a uma hora' : ''}.',
-      );
+      _toast(auto ? tr.listUpdateFailedRetry('$e') : tr.listUpdateFailed('$e'));
     } finally {
       _listProgress.value = null;
       if (mounted) setState(() => _listBusy = false);
@@ -665,21 +659,18 @@ class _HomePageState extends State<HomePage> {
       if (api != null) urls = <String>[xmltvUrl(api)];
     }
     if (urls.isEmpty) {
-      setState(
-        () => _epgStatus =
-            'Não achei o guia (EPG) nem na lista nem no servidor dela.',
-      );
+      setState(() => _epgStatus = tr.guideNotFound);
       return;
     }
 
     if (!force && _deferWhilePlaying(() => _refreshEpg())) {
-      setState(() => _epgStatus = 'Guia: atualização adiada até o vídeo parar');
+      setState(() => _epgStatus = tr.guideDeferred);
       return;
     }
     final int gen = _gen;
     setState(() {
       _epgBusy = true;
-      _epgStatus = 'Baixando o guia de programação...';
+      _epgStatus = tr.guideDownloading;
     });
     try {
       final int n = await _jobs.run(
@@ -701,7 +692,7 @@ class _HomePageState extends State<HomePage> {
       setState(() {
         _epg = e;
         _epgBusy = false;
-        _epgStatus = 'Guia: $n programas, $matched canais com programação';
+        _epgStatus = tr.guideStatus(n, matched);
       });
       _reloadGroups(); // o guia ajuda a confirmar canais iguais
     } on DownloadCancelled {
@@ -710,7 +701,7 @@ class _HomePageState extends State<HomePage> {
       if (!mounted) return;
       setState(() {
         _epgBusy = false;
-        _epgStatus = 'Guia: $err';
+        _epgStatus = tr.guideError('$err');
       });
     }
   }
@@ -732,10 +723,7 @@ class _HomePageState extends State<HomePage> {
     if (!force && metaIsFresh(path)) return;
     final ApiAccess? api = deriveApiAccess(p.url, db.sampleItemUrl());
     if (api == null) {
-      _toast(
-        'Não consegui identificar o servidor da lista para buscar '
-        'notas e datas.',
-      );
+      _toast(tr.metaNoServer);
       return;
     }
     if (!force && _deferWhilePlaying(() => _refreshMeta())) return;
@@ -764,16 +752,13 @@ class _HomePageState extends State<HomePage> {
       final (int, int) m = cur.metaCoverage();
       final (int, int) sr = _series?.metaCoverage() ?? (0, 0);
       setState(() => _metaBusy = false);
-      _toast(
-        'Notas carregadas: ${m.$2} de ${m.$1} filmes, '
-        '${sr.$2} de ${sr.$1} séries.',
-      );
+      _toast(tr.metaLoaded(m.$2, m.$1, sr.$2, sr.$1));
     } on DownloadCancelled {
       _metaBusy = false;
     } on Object catch (e) {
       if (!mounted) return;
       setState(() => _metaBusy = false);
-      _toast('Notas e datas: $e');
+      _toast(tr.metaError('$e'));
     }
   }
 
@@ -815,19 +800,16 @@ class _HomePageState extends State<HomePage> {
     final bool? ok = await showDialog<bool>(
       context: context,
       builder: (BuildContext ctx) => AlertDialog(
-        title: Text('Excluir "${cur.name}"?'),
-        content: const Text(
-          'A lista baixada, o guia e os itens ocultos deste perfil '
-          'também serão apagados.',
-        ),
+        title: Text(tr.deleteProfileTitle(cur.name)),
+        content: Text(tr.deleteProfileBody),
         actions: <Widget>[
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancelar'),
+            child: Text(tr.cancel),
           ),
           FilledButton(
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Excluir'),
+            child: Text(tr.delete),
           ),
         ],
       ),
@@ -1007,7 +989,7 @@ class _HomePageState extends State<HomePage> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[
             Text(
-              'Próximo episódio em ${_nextIn}s',
+              tr.nextEpisodeIn(_nextIn ?? 0),
               style: t.textTheme.labelLarge?.copyWith(
                 color: t.colorScheme.primary,
               ),
@@ -1016,8 +998,8 @@ class _HomePageState extends State<HomePage> {
             SizedBox(
               width: 280,
               child: Text(
-                'T${two(next.season)} E${two(next.episode)} · '
-                '${episodeLabel(next)}',
+                '${tr.seasonEpisodeShort(two(next.season), two(next.episode))}'
+                ' · ${episodeLabel(next)}',
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
               ),
@@ -1028,17 +1010,14 @@ class _HomePageState extends State<HomePage> {
               children: <Widget>[
                 FilledButton.icon(
                   icon: const Icon(Icons.skip_next),
-                  label: const Text('Assistir agora'),
+                  label: Text(tr.watchNow),
                   onPressed: () {
                     _cancelNext();
                     _stepEpisode(1);
                   },
                 ),
                 const SizedBox(width: 8),
-                TextButton(
-                  onPressed: _cancelNext,
-                  child: const Text('Cancelar'),
-                ),
+                TextButton(onPressed: _cancelNext, child: Text(tr.cancel)),
               ],
             ),
           ],
@@ -1168,7 +1147,7 @@ class _HomePageState extends State<HomePage> {
             children: <Widget>[
               Icon(Icons.history, size: 18, color: t.colorScheme.primary),
               const SizedBox(width: 6),
-              Text('Continuar assistindo', style: t.textTheme.titleSmall),
+              Text(tr.continueWatching, style: t.textTheme.titleSmall),
             ],
           ),
         ),
@@ -1280,7 +1259,7 @@ class _HomePageState extends State<HomePage> {
       final int max = live.left.isEmpty ? 3 : 1;
       while (_liveRetries < max) {
         _liveRetries++;
-        _toast('"${live.card.name}" travou. Reconectando...');
+        _toast(tr.liveStalledReconnecting(live.card.name));
         final int token = ++_playToken;
         final Future<bool> started = _waitStart();
         await _player.open(Media(live.url));
@@ -1294,11 +1273,16 @@ class _HomePageState extends State<HomePage> {
         }
       }
       if (live.left.isEmpty) {
-        _toast('"${live.card.name}" não voltou. Tente de novo daqui a pouco.');
+        _toast(tr.liveNotBack(live.card.name));
         _live = null;
         return;
       }
-      _toast('${live.label} travou. Mudando para ${live.left.first.label}...');
+      _toast(
+        tr.liveSwitching(
+          versionName(live.label),
+          versionName(live.left.first.label),
+        ),
+      );
       unawaited(_playGroup(live.card, live.left, 0, tried: live.tried));
     } finally {
       _recovering = false;
@@ -1340,7 +1324,7 @@ class _HomePageState extends State<HomePage> {
     // pergunta. Canais ao vivo: as versões são o mesmo sinal, troca sozinho.
     final bool ask = _section != Section.live;
     setState(() {
-      _playing = '${card.name} · ${v.label}';
+      _playing = '${card.name} · ${versionName(v.label)}';
       _playingUrl = card.url;
     });
     final Future<bool> started = _waitStart();
@@ -1365,29 +1349,34 @@ class _HomePageState extends State<HomePage> {
         if (!done.contains(x)) x,
     ];
     if (left.isEmpty) {
-      _toast('Nenhuma versão de "${card.name}" abriu agora.');
+      _toast(tr.noVersionOpened(card.name));
       return;
     }
     if (!ask) {
-      _toast('A versão ${v.label} não abriu. Tentando ${left.first.label}...');
+      _toast(
+        tr.versionFailedTrying(
+          versionName(v.label),
+          versionName(left.first.label),
+        ),
+      );
       await _playGroup(card, left, 0, tried: done);
       return;
     }
     final ChannelVersion? next = await showDialog<ChannelVersion>(
       context: context,
       builder: (BuildContext ctx) => AlertDialog(
-        title: Text('A versão ${v.label} não abriu'),
+        title: Text(tr.versionFailedTitle(versionName(v.label))),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[
-            Text('Quer tentar outra versão de "${card.name}"?'),
+            Text(tr.tryAnotherVersion(card.name)),
             const SizedBox(height: 8),
             for (final ChannelVersion x in left)
               ListTile(
                 dense: true,
                 leading: const Icon(Icons.play_arrow),
-                title: Text(x.label),
+                title: Text(versionName(x.label)),
                 onTap: () => Navigator.pop(ctx, x),
               ),
           ],
@@ -1395,7 +1384,7 @@ class _HomePageState extends State<HomePage> {
         actions: <Widget>[
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: const Text('Cancelar'),
+            child: Text(tr.cancel),
           ),
         ],
       ),
@@ -1523,8 +1512,7 @@ class _HomePageState extends State<HomePage> {
                             Padding(
                               padding: const EdgeInsets.symmetric(vertical: 3),
                               child: Text(
-                                'Atualizando a lista: ${v ?? ''} '
-                                '(pode continuar usando)',
+                                tr.updatingListProgress(v ?? ''),
                                 style: Theme.of(context).textTheme.bodySmall,
                               ),
                             ),
@@ -1538,14 +1526,12 @@ class _HomePageState extends State<HomePage> {
           ),
           actions: <Widget>[
             IconButton(
-              tooltip: _listBusy
-                  ? 'Atualizando a lista...'
-                  : 'Atualizar a lista (em segundo plano)',
+              tooltip: _listBusy ? tr.updatingList : tr.refreshListBackground,
               icon: const Icon(Icons.refresh),
               onPressed: (cur == null || _listBusy) ? null : _refreshList,
             ),
             PopupMenuButton<String>(
-              tooltip: 'Perfis',
+              tooltip: tr.profiles,
               icon: const Icon(Icons.account_circle),
               onSelected: _onMenu,
               itemBuilder: (BuildContext context) => <PopupMenuEntry<String>>[
@@ -1556,24 +1542,24 @@ class _HomePageState extends State<HomePage> {
                     child: Text(p.name),
                   ),
                 const PopupMenuDivider(),
-                const PopupMenuItem<String>(
+                PopupMenuItem<String>(
                   value: 'new',
-                  child: Text('Novo perfil...'),
+                  child: Text(tr.newProfileMenu),
                 ),
                 if (cur != null)
-                  const PopupMenuItem<String>(
+                  PopupMenuItem<String>(
                     value: 'edit',
-                    child: Text('Editar perfil atual...'),
+                    child: Text(tr.editProfileMenu),
                   ),
                 if (cur != null)
-                  const PopupMenuItem<String>(
+                  PopupMenuItem<String>(
                     value: 'delete',
-                    child: Text('Excluir perfil atual'),
+                    child: Text(tr.deleteProfileMenu),
                   ),
               ],
             ),
             IconButton(
-              tooltip: 'Configurações',
+              tooltip: tr.settings,
               icon: const Icon(Icons.settings_outlined),
               onPressed: _openSettings,
             ),
@@ -1584,7 +1570,7 @@ class _HomePageState extends State<HomePage> {
             ? Center(
                 child: FilledButton(
                   onPressed: _addProfile,
-                  child: const Text('Criar perfil'),
+                  child: Text(tr.createProfile),
                 ),
               )
             : FutureBuilder<CatalogDb>(future: _future, builder: _content),
@@ -1600,9 +1586,7 @@ class _HomePageState extends State<HomePage> {
           children: <Widget>[
             const CircularProgressIndicator(),
             const SizedBox(height: 12),
-            const Text(
-              'Baixando e preparando a lista (só demora na primeira vez)...',
-            ),
+            Text(tr.firstDownload),
             ValueListenableBuilder<String?>(
               valueListenable: _listProgress,
               builder: (BuildContext context, String? v, Widget? _) =>
@@ -1619,11 +1603,14 @@ class _HomePageState extends State<HomePage> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: <Widget>[
-              Text('Erro: ${snap.error}', textAlign: TextAlign.center),
+              Text(
+                tr.errorPrefix('${snap.error}'),
+                textAlign: TextAlign.center,
+              ),
               const SizedBox(height: 12),
               FilledButton(
                 onPressed: () => _select(_profile!, refresh: true),
-                child: const Text('Tentar novamente'),
+                child: Text(tr.tryAgain),
               ),
             ],
           ),
@@ -1631,6 +1618,8 @@ class _HomePageState extends State<HomePage> {
       );
     }
 
+    // Redesenha a tela quando o idioma muda (os textos vêm de `tr`).
+    Localizations.localeOf(context);
     // Depois de uma atualização em segundo plano, _db é o catálogo novo.
     final CatalogDb db = _db ?? snap.data!;
     final SortMode curSort = _sorts[_section] ?? SortMode.listOrder;
@@ -1806,10 +1795,10 @@ class _HomePageState extends State<HomePage> {
 
   static const double _miniVideoWidth = 360;
 
-  static const Map<Section, String> _sectionNames = <Section, String>{
-    Section.live: 'Canais ao vivo',
-    Section.movies: 'Filmes',
-    Section.series: 'Séries',
+  static String _sectionName(Section s) => switch (s) {
+    Section.live => tr.liveChannels,
+    Section.movies => tr.movies,
+    Section.series => tr.series,
   };
 
   Future<void> _pickCategory(
@@ -1821,7 +1810,7 @@ class _HomePageState extends State<HomePage> {
     bool isHidden(String g) => user.hiddenGroups(_section).contains(g);
     final CategoryChoice? c = await showCategoryPicker(
       context,
-      title: 'Categorias · ${_sectionNames[_section]}',
+      title: tr.categoriesOf(_sectionName(_section)),
       groups: groups,
       counts: counts,
       selected: _group,
@@ -1841,9 +1830,12 @@ class _HomePageState extends State<HomePage> {
   /// Nome da ordem na seção atual ("recentes" quer dizer coisas diferentes
   /// em filmes e séries).
   String _sortLabel(SortMode m) => switch ((m, _section)) {
-    (SortMode.recent, Section.series) =>
-      'Adicionadas ou atualizadas recentemente',
-    (SortMode.recent, _) => 'Adicionados recentemente',
+    (SortMode.recent, Section.series) => tr.sortRecentSeries,
+    (SortMode.recent, _) => tr.sortRecent,
+    (SortMode.listOrder, _) => tr.sortListOrder,
+    (SortMode.listOrderReverse, _) => tr.sortListOrderReverse,
+    (SortMode.rating, _) => tr.sortRating,
+    (SortMode.year, _) => tr.sortYear,
     _ => m.label,
   };
 
@@ -1851,7 +1843,7 @@ class _HomePageState extends State<HomePage> {
     final ThemeData t = Theme.of(context);
     final SortMode cur = _sorts[_section] ?? SortMode.listOrder;
     return PopupMenuButton<Object>(
-      tooltip: 'Ordenar: ${_sortLabel(cur)}',
+      tooltip: tr.sortBy(_sortLabel(cur)),
       icon: const Icon(Icons.sort),
       style: IconButton.styleFrom(
         backgroundColor: t.colorScheme.secondaryContainer,
@@ -1869,17 +1861,17 @@ class _HomePageState extends State<HomePage> {
           CheckedPopupMenuItem<Object>(
             value: 'group',
             checked: _grouping,
-            child: const Text('Agrupar versões repetidas'),
+            child: Text(tr.groupRepeatedVersions),
           ),
           if (_grouping && _groups != null)
-            const PopupMenuItem<Object>(
+            PopupMenuItem<Object>(
               value: 'review',
-              child: Text('Revisar agrupamentos…'),
+              child: Text(tr.reviewGroupsMenu),
             ),
           if (_separated.isNotEmpty)
             PopupMenuItem<Object>(
               value: 'separated',
-              child: Text('Grupos separados (${_separated.length})…'),
+              child: Text(tr.separatedGroupsMenu(_separated.length)),
             ),
           const PopupMenuDivider(),
         ],
@@ -1891,7 +1883,9 @@ class _HomePageState extends State<HomePage> {
               checked: cur == m,
               child: Text(
                 (m.needsMeta && !_hasMeta)
-                    ? '${_sortLabel(m)} (${_metaBusy ? 'carregando...' : 'indisponível'})'
+                    ? (_metaBusy
+                          ? tr.sortModeLoading(_sortLabel(m))
+                          : tr.sortModeUnavailable(_sortLabel(m)))
                     : _sortLabel(m),
               ),
             ),
@@ -1953,7 +1947,7 @@ class _HomePageState extends State<HomePage> {
     if (loading) {
       body = const Center(child: CircularProgressIndicator());
     } else if (items.isEmpty) {
-      body = const Center(child: Text('Nada por aqui'));
+      body = Center(child: Text(tr.nothingHere));
     } else if (live && !_wide) {
       body = ListView.builder(
         key: listKey,
@@ -2102,8 +2096,8 @@ class _HomePageState extends State<HomePage> {
               Expanded(
                 child: CategoryButton(
                   label: group == favoritesGroup
-                      ? 'Favoritos'
-                      : (group ?? 'Todas as categorias'),
+                      ? tr.favorites
+                      : (group ?? tr.allCategories),
                   count: group == favoritesGroup
                       ? items.length
                       : (group == null
@@ -2119,9 +2113,7 @@ class _HomePageState extends State<HomePage> {
               _sortMenu(),
               const SizedBox(width: 4),
               IconButton.filledTonal(
-                tooltip: _wide
-                    ? 'Reduzir a lista (vídeo grande)'
-                    : 'Ampliar a lista (vídeo pequeno)',
+                tooltip: _wide ? tr.shrinkList : tr.expandList,
                 icon: Icon(_wide ? Icons.close_fullscreen : Icons.open_in_full),
                 onPressed: () => setState(() => _wide = !_wide),
               ),
@@ -2142,12 +2134,12 @@ class _HomePageState extends State<HomePage> {
                             controller: _searchCtl,
                             decoration: InputDecoration(
                               prefixIcon: const Icon(Icons.search),
-                              hintText: 'Buscar pelo nome',
+                              hintText: tr.searchByName,
                               isDense: true,
                               suffixIcon: v.text.isEmpty
                                   ? null
                                   : IconButton(
-                                      tooltip: 'Limpar a busca',
+                                      tooltip: tr.clearSearch,
                                       icon: const Icon(Icons.close),
                                       onPressed: () =>
                                           setState(() => _setQuery('')),
@@ -2161,7 +2153,7 @@ class _HomePageState extends State<HomePage> {
               if (live) ...<Widget>[
                 const SizedBox(width: 8),
                 IconButton.filledTonal(
-                  tooltip: 'Guia de programação',
+                  tooltip: tr.programGuide,
                   icon: const Icon(Icons.view_timeline_outlined),
                   onPressed: _epg == null ? null : _openGuide,
                 ),

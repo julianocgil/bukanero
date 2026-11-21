@@ -6,6 +6,7 @@ import 'package:flutter/scheduler.dart';
 import 'package:media_kit/media_kit.dart';
 
 import '../data/perf_log.dart';
+import '../l10n/tr.dart';
 
 const int _historySecs = 60;
 const double _slowFrameMs = 17;
@@ -181,14 +182,11 @@ class PerfOverlay extends StatelessWidget {
               mainAxisSize: MainAxisSize.min,
               children: <Widget>[
                 Text(
-                  'Interface  ${f(s?.uiFrames)} FPS · ${f(s?.uiSlow)} lentos'
-                  ' · pior ${f(s?.uiWorstMs)} ms\n'
-                  'Vídeo      ${f(s?.videoFps, 1)} de ${f(s?.sourceFps, 1)} FPS'
-                  ' · hw ${s?.hwdec ?? '–'}\n'
-                  'Descartes  ${f((s?.voDrops ?? 0) + (s?.decoderDrops ?? 0))}/s'
-                  ' · $drops em 60 s\n'
-                  'Reserva    ${f(s?.cacheSecs, 1)} s'
-                  '${(s?.buffering ?? false) ? ' · CARREGANDO' : ''}'
+                  '${tr.perfUi(f(s?.uiFrames), f(s?.uiSlow), f(s?.uiWorstMs))}\n'
+                  '${tr.perfVideo(f(s?.videoFps, 1), f(s?.sourceFps, 1), s?.hwdec ?? '–')}\n'
+                  '${tr.perfDrops(f((s?.voDrops ?? 0) + (s?.decoderDrops ?? 0)), drops)}\n'
+                  '${tr.perfReserve(f(s?.cacheSecs, 1))}'
+                  '${(s?.buffering ?? false) ? tr.perfLoadingTag : ''}'
                   ' · sync ${f(s?.avsyncMs)} ms',
                   style: mono,
                 ),
@@ -201,8 +199,8 @@ class PerfOverlay extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: 4),
-                const Text(
-                  'branco: interface · azul: vídeo · vermelho: carregando',
+                Text(
+                  tr.perfLegend,
                   style: TextStyle(color: Colors.white70, fontSize: 10),
                 ),
               ],

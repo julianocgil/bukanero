@@ -1,0 +1,611 @@
+{
+  "@@locale": "pt",
+  "close": "Fechar",
+  "cancel": "Cancelar",
+  "save": "Salvar",
+  "delete": "Excluir",
+  "back": "Voltar",
+  "now": "Agora",
+  "tryAgain": "Tentar novamente",
+  "errorPrefix": "Erro: {error}",
+  "@errorPrefix": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "settings": "Configurações",
+  "favorites": "Favoritos",
+  "allCategories": "Todas as categorias",
+  "categoriesCount": "{count} categorias",
+  "@categoriesCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "searchCategory": "Procurar categoria",
+  "categoriesOf": "Categorias · {section}",
+  "@categoriesOf": {
+    "placeholders": {
+      "section": {
+        "type": "String"
+      }
+    }
+  },
+  "liveChannels": "Canais ao vivo",
+  "liveShort": "Ao vivo",
+  "movies": "Filmes",
+  "series": "Séries",
+  "nothingHere": "Nada por aqui",
+  "searchByName": "Buscar pelo nome",
+  "clearSearch": "Limpar a busca",
+  "shrinkList": "Reduzir a lista (vídeo grande)",
+  "expandList": "Ampliar a lista (vídeo pequeno)",
+  "continueWatching": "Continuar assistindo",
+  "programGuide": "Guia de programação",
+  "channelOrProgram": "Canal ou programa",
+  "oneHourBefore": "Uma hora antes",
+  "oneHourAfter": "Uma hora depois",
+  "guideNoChannels": "Nenhum canal desta lista tem programação no guia.",
+  "channelsCount": "{count} canais",
+  "@channelsCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "watchNow": "Assistir agora",
+  "openChannel": "Abrir o canal",
+  "guideNotFound": "Não achei o guia (EPG) nem na lista nem no servidor dela.",
+  "guideDeferred": "Guia: atualização adiada até o vídeo parar",
+  "guideDownloading": "Baixando o guia de programação...",
+  "guideStatus": "Guia: {programmes} programas, {channels} canais com programação",
+  "@guideStatus": {
+    "placeholders": {
+      "programmes": {
+        "type": "int"
+      },
+      "channels": {
+        "type": "int"
+      }
+    }
+  },
+  "guideError": "Guia: {error}",
+  "@guideError": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "groupRepeatedVersions": "Agrupar versões repetidas",
+  "groupingSubtitle": "HD, FHD, 4K, dublado, legendado... num cartão só",
+  "reviewGroups": "Revisar agrupamentos",
+  "reviewGroupsMenu": "Revisar agrupamentos…",
+  "separatedGroups": "Grupos separados ({count})",
+  "@separatedGroups": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "separatedGroupsMenu": "Grupos separados ({count})…",
+  "@separatedGroupsMenu": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "noSeparatedGroups": "Nenhum grupo separado.",
+  "regroup": "Reagrupar",
+  "regroupAll": "Reagrupar todos",
+  "separate": "Separar",
+  "allRegrouped": "Todos os grupos foram juntados de novo.",
+  "groupSeparated": "Grupo \"{name}\" separado. As versões aparecem soltas.",
+  "@groupSeparated": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "versionsRegrouped": "Versões juntadas de novo.",
+  "versionsOfRegrouped": "As versões de \"{name}\" foram juntadas de novo.",
+  "@versionsOfRegrouped": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "preferredForgotten": "As versões preferidas foram esquecidas.",
+  "forgetPreferred": "Esquecer versões preferidas",
+  "reviewIntro": "{count} grupos foram juntados só por nome e imagem. Os juntados só pelo nome vêm primeiro. Separe o que não for a mesma coisa.",
+  "@reviewIntro": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "searchGroup": "Procurar grupo",
+  "nothingToReview": "Nada para revisar aqui.",
+  "reasonSameTvgId": "mesmo tvg-id",
+  "reasonSameTmdb": "mesmo TMDB",
+  "reasonSameNameYear": "mesmo nome e ano",
+  "reasonSameNameImage": "mesmo nome e imagem",
+  "reasonSameNameGuide": "mesmo nome e canal do guia",
+  "reasonSameNameNumber": "mesmo nome com número",
+  "reasonSameName": "mesmo nome",
+  "reasonNumberedFamily": "família numerada",
+  "versionDefault": "Padrão",
+  "options": "Opções",
+  "hide": "Ocultar",
+  "unhide": "Reexibir",
+  "regroupVersions": "Juntar as versões de novo",
+  "addFavorite": "Favoritar",
+  "removeFavorite": "Tirar dos favoritos",
+  "favorited": "Favorito",
+  "chooseVersion": "Escolher a versão",
+  "yourPreference": "(sua preferência)",
+  "automatic": "(automática)",
+  "separateGroup": "Separar este grupo",
+  "removeFromRecent": "Tirar dos recentes",
+  "watch": "Assistir",
+  "versions": "Versões",
+  "directedBy": "Direção: {names}",
+  "@directedBy": {
+    "placeholders": {
+      "names": {
+        "type": "String"
+      }
+    }
+  },
+  "castList": "Elenco: {names}",
+  "@castList": {
+    "placeholders": {
+      "names": {
+        "type": "String"
+      }
+    }
+  },
+  "durationHours": "{hours} h {minutes}",
+  "@durationHours": {
+    "placeholders": {
+      "hours": {
+        "type": "int"
+      },
+      "minutes": {
+        "type": "String"
+      }
+    }
+  },
+  "durationMinutes": "{minutes} min",
+  "@durationMinutes": {
+    "placeholders": {
+      "minutes": {
+        "type": "int"
+      }
+    }
+  },
+  "episodeN": "Episódio {number}",
+  "@episodeN": {
+    "placeholders": {
+      "number": {
+        "type": "int"
+      }
+    }
+  },
+  "specials": "Especiais",
+  "seasonN": "Temporada {number}",
+  "@seasonN": {
+    "placeholders": {
+      "number": {
+        "type": "int"
+      }
+    }
+  },
+  "seasonsEpisodes": "{seasons} temporada(s) · {episodes} episódio(s)",
+  "@seasonsEpisodes": {
+    "placeholders": {
+      "seasons": {
+        "type": "int"
+      },
+      "episodes": {
+        "type": "int"
+      }
+    }
+  },
+  "previousEpisodes": "Episódios anteriores",
+  "nextEpisodes": "Próximos episódios",
+  "pageOf": "Página {page} de {pages}",
+  "@pageOf": {
+    "placeholders": {
+      "page": {
+        "type": "int"
+      },
+      "pages": {
+        "type": "int"
+      }
+    }
+  },
+  "lastWatched": "Último",
+  "nextEpisodeIn": "Próximo episódio em {seconds}s",
+  "@nextEpisodeIn": {
+    "placeholders": {
+      "seconds": {
+        "type": "int"
+      }
+    }
+  },
+  "seasonEpisodeShort": "T{season} E{episode}",
+  "@seasonEpisodeShort": {
+    "placeholders": {
+      "season": {
+        "type": "String"
+      },
+      "episode": {
+        "type": "String"
+      }
+    }
+  },
+  "back15": "Voltar 15 s",
+  "forward15": "Avançar 15 s",
+  "previousEpisode": "Episódio anterior",
+  "nextEpisode": "Próximo episódio",
+  "mute": "Tirar o som",
+  "unmute": "Ligar o som",
+  "liveStalledReconnecting": "\"{name}\" travou. Reconectando...",
+  "@liveStalledReconnecting": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "liveNotBack": "\"{name}\" não voltou. Tente de novo daqui a pouco.",
+  "@liveNotBack": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "liveSwitching": "{from} travou. Mudando para {to}...",
+  "@liveSwitching": {
+    "placeholders": {
+      "from": {
+        "type": "String"
+      },
+      "to": {
+        "type": "String"
+      }
+    }
+  },
+  "noVersionOpened": "Nenhuma versão de \"{name}\" abriu agora.",
+  "@noVersionOpened": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "versionFailedTrying": "A versão {version} não abriu. Tentando {next}...",
+  "@versionFailedTrying": {
+    "placeholders": {
+      "version": {
+        "type": "String"
+      },
+      "next": {
+        "type": "String"
+      }
+    }
+  },
+  "versionFailedTitle": "A versão {version} não abriu",
+  "@versionFailedTitle": {
+    "placeholders": {
+      "version": {
+        "type": "String"
+      }
+    }
+  },
+  "tryAnotherVersion": "Quer tentar outra versão de \"{name}\"?",
+  "@tryAnotherVersion": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "listDownloadFailedUsingOld": "Não consegui baixar a lista ({error}). Usando a lista anterior.",
+  "@listDownloadFailedUsingOld": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "mbDownloaded": "{mb} MB baixados",
+  "@mbDownloaded": {
+    "placeholders": {
+      "mb": {
+        "type": "String"
+      }
+    }
+  },
+  "mbOf": "{received} de {total} MB",
+  "@mbOf": {
+    "placeholders": {
+      "received": {
+        "type": "String"
+      },
+      "total": {
+        "type": "String"
+      }
+    }
+  },
+  "queued": "Na fila...",
+  "connecting": "Conectando ao servidor...",
+  "preparingList": "Preparando a lista nova...",
+  "listUpdatedAuto": "Lista atualizada automaticamente.",
+  "listUpdated": "Lista atualizada.",
+  "listUpdateFailed": "Não consegui atualizar a lista ({error}). Continuo com a anterior.",
+  "@listUpdateFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "listUpdateFailedRetry": "Não consegui atualizar a lista ({error}). Continuo com a anterior; tento de novo daqui a uma hora.",
+  "@listUpdateFailedRetry": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "updatingListProgress": "Atualizando a lista: {progress} (pode continuar usando)",
+  "@updatingListProgress": {
+    "placeholders": {
+      "progress": {
+        "type": "String"
+      }
+    }
+  },
+  "updatingList": "Atualizando a lista...",
+  "refreshListBackground": "Atualizar a lista (em segundo plano)",
+  "firstDownload": "Baixando e preparando a lista (só demora na primeira vez)...",
+  "metaNoServer": "Não consegui identificar o servidor da lista para buscar notas e datas.",
+  "metaLoaded": "Notas carregadas: {rated} de {movies} filmes, {ratedSeries} de {series} séries.",
+  "@metaLoaded": {
+    "placeholders": {
+      "rated": {
+        "type": "int"
+      },
+      "movies": {
+        "type": "int"
+      },
+      "ratedSeries": {
+        "type": "int"
+      },
+      "series": {
+        "type": "int"
+      }
+    }
+  },
+  "metaError": "Notas e datas: {error}",
+  "@metaError": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "sortBy": "Ordenar: {mode}",
+  "@sortBy": {
+    "placeholders": {
+      "mode": {
+        "type": "String"
+      }
+    }
+  },
+  "sortListOrder": "Ordem da lista",
+  "sortListOrderReverse": "Ordem da lista (invertida)",
+  "sortRecent": "Adicionados recentemente",
+  "sortRecentSeries": "Adicionadas ou atualizadas recentemente",
+  "sortRating": "Melhor nota",
+  "sortYear": "Ano (mais novo)",
+  "sortModeLoading": "{mode} (carregando...)",
+  "@sortModeLoading": {
+    "placeholders": {
+      "mode": {
+        "type": "String"
+      }
+    }
+  },
+  "sortModeUnavailable": "{mode} (indisponível)",
+  "@sortModeUnavailable": {
+    "placeholders": {
+      "mode": {
+        "type": "String"
+      }
+    }
+  },
+  "profiles": "Perfis",
+  "newProfileMenu": "Novo perfil...",
+  "editProfileMenu": "Editar perfil atual...",
+  "deleteProfileMenu": "Excluir perfil atual",
+  "createProfile": "Criar perfil",
+  "deleteProfileTitle": "Excluir \"{name}\"?",
+  "@deleteProfileTitle": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "deleteProfileBody": "A lista baixada, o guia e os itens ocultos deste perfil também serão apagados.",
+  "newProfile": "Novo perfil",
+  "editProfile": "Editar perfil",
+  "userName": "Nome do usuário",
+  "playlistField": "Playlist M3U (URL ou caminho do arquivo)",
+  "guideField": "Guia XMLTV (opcional; vazio = detectar sozinho)",
+  "fillNameAndPlaylist": "Preencha o nome e a playlist.",
+  "playlistUrlHint": "Use uma URL http(s) ou o caminho de um arquivo.",
+  "guideUrlHint": "Guia: use uma URL http(s) ou um arquivo XMLTV.",
+  "acceptInvalidCert": "Aceitar o certificado inválido deste servidor",
+  "acceptInvalidCertHint": "Só para listas em que você confia. Desmarcado é mais seguro.",
+  "autoRefreshList": "Atualizar a lista sozinho",
+  "refresh6h": "A cada 6 horas",
+  "refresh12h": "A cada 12 horas",
+  "refresh24h": "A cada 24 horas",
+  "refresh24hDefault": "A cada 24 horas (padrão)",
+  "refresh2d": "A cada 2 dias",
+  "refreshWeekly": "Uma vez por semana",
+  "refreshNever": "Nunca (só quando eu pedir)",
+  "appearance": "Aparência",
+  "themeNavy": "Azul",
+  "themeBlack": "Preto",
+  "themeLight": "Claro",
+  "themeSystem": "Do sistema",
+  "accentGold": "Dourado",
+  "accentBlue": "Azul",
+  "accentGreen": "Verde",
+  "accentRed": "Vermelho",
+  "accentPurple": "Roxo",
+  "language": "Idioma",
+  "languageSystem": "Do sistema",
+  "listSection": "Lista",
+  "refreshListNow": "Atualizar a lista agora",
+  "refreshGuideNow": "Atualizar o guia agora",
+  "repeatedVersions": "Versões repetidas",
+  "display": "Exibição",
+  "showHidden": "Mostrar itens ocultos",
+  "perfMonitor": "Monitor de desempenho (FPS)",
+  "perfMonitorSubtitle": "Painel sobre o vídeo e histórico em desempenho.csv",
+  "profileSection": "Perfil",
+  "editCurrentProfile": "Editar perfil atual",
+  "perfLogAt": "Gravando o histórico em {path}",
+  "@perfLogAt": {
+    "placeholders": {
+      "path": {
+        "type": "String"
+      }
+    }
+  },
+  "perfUi": "Interface  {fps} FPS · {slow} lentos · pior {worst} ms",
+  "@perfUi": {
+    "placeholders": {
+      "fps": {
+        "type": "String"
+      },
+      "slow": {
+        "type": "String"
+      },
+      "worst": {
+        "type": "String"
+      }
+    }
+  },
+  "perfVideo": "Vídeo      {fps} de {source} FPS · hw {hw}",
+  "@perfVideo": {
+    "placeholders": {
+      "fps": {
+        "type": "String"
+      },
+      "source": {
+        "type": "String"
+      },
+      "hw": {
+        "type": "String"
+      }
+    }
+  },
+  "perfDrops": "Descartes  {rate}/s · {count} em 60 s",
+  "@perfDrops": {
+    "placeholders": {
+      "rate": {
+        "type": "String"
+      },
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "perfReserve": "Reserva    {seconds} s",
+  "@perfReserve": {
+    "placeholders": {
+      "seconds": {
+        "type": "String"
+      }
+    }
+  },
+  "perfLoadingTag": " · CARREGANDO",
+  "perfLegend": "branco: interface · azul: vídeo · vermelho: carregando",
+  "errCertHint": "Se você confia neste servidor, marque \"Aceitar o certificado inválido\" em Editar perfil.",
+  "errSelfSigned": "o servidor usa um certificado autoassinado.",
+  "errCertExpired": "o certificado do servidor está vencido (ou a data do PC está errada).",
+  "errCertHost": "o certificado do servidor é de outro domínio.",
+  "errCertUnknownCa": "o certificado do servidor vem de uma autoridade desconhecida.",
+  "errNoTls": "o servidor não fala TLS nesta porta; tente http:// no lugar de https://.",
+  "errTls": "falha de TLS/certificado ao conectar",
+  "errInvalidUrl": "URL inválida (use http:// ou https://)",
+  "errNoResponse": "o servidor parou de responder",
+  "errDns": "não foi possível resolver o endereço do servidor (DNS). A operadora pode estar bloqueando, ou o endereço mudou.",
+  "errConnection": "falha de conexão ({detail})",
+  "@errConnection": {
+    "placeholders": {
+      "detail": {
+        "type": "String"
+      }
+    }
+  },
+  "errNetwork": "rede",
+  "errIncomplete": "o download chegou incompleto",
+  "errBadHttp": "resposta HTTP inválida: {detail}",
+  "@errBadHttp": {
+    "placeholders": {
+      "detail": {
+        "type": "String"
+      }
+    }
+  },
+  "errForbidden": "o servidor recusou o acesso (HTTP {status}). Confira usuário e senha ou se a lista expirou.",
+  "@errForbidden": {
+    "placeholders": {
+      "status": {
+        "type": "String"
+      }
+    }
+  },
+  "errEmpty": "o servidor devolveu uma resposta vazia",
+  "errHttp": "o servidor respondeu HTTP {code}",
+  "@errHttp": {
+    "placeholders": {
+      "code": {
+        "type": "int"
+      }
+    }
+  },
+  "errTooSlow": "o servidor está mandando os dados devagar demais",
+  "errTooLong": "o download passou de {minutes} min e foi cancelado",
+  "@errTooLong": {
+    "placeholders": {
+      "minutes": {
+        "type": "int"
+      }
+    }
+  },
+  "errGuideFileNotFound": "arquivo do guia não encontrado",
+  "errGuideFormat": "formato do guia não reconhecido",
+  "errNoGuideSource": "nenhuma fonte de guia disponível",
+  "errServerResponse": "resposta do servidor não reconhecida",
+  "errNoMeta": "o servidor não devolveu notas nem datas"
+}

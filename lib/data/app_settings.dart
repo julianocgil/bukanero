@@ -10,12 +10,14 @@ class AppSettings {
     this.theme = 'dark',
     this.accent = 'gold',
     this.darkStyle = 'dark',
+    this.language = 'system',
   });
 
   factory AppSettings.fromJson(Map<String, dynamic> j) => AppSettings(
     theme: (j['theme'] as String?) ?? 'dark',
     accent: (j['accent'] as String?) ?? 'gold',
     darkStyle: (j['darkStyle'] as String?) ?? 'dark',
+    language: (j['language'] as String?) ?? 'system',
   );
 
   /// 'dark' (azul-marinho), 'black', 'light' ou 'system'.
@@ -28,17 +30,26 @@ class AppSettings {
   /// Nome da cor de destaque ('gold', 'blue', 'green', 'red', 'purple').
   final String accent;
 
-  AppSettings copyWith({String? theme, String? accent, String? darkStyle}) =>
-      AppSettings(
-        theme: theme ?? this.theme,
-        accent: accent ?? this.accent,
-        darkStyle: darkStyle ?? this.darkStyle,
-      );
+  /// Idioma do app ('pt', 'en', 'es'...) ou 'system'.
+  final String language;
+
+  AppSettings copyWith({
+    String? theme,
+    String? accent,
+    String? darkStyle,
+    String? language,
+  }) => AppSettings(
+    theme: theme ?? this.theme,
+    accent: accent ?? this.accent,
+    darkStyle: darkStyle ?? this.darkStyle,
+    language: language ?? this.language,
+  );
 
   Map<String, dynamic> toJson() => <String, dynamic>{
     'theme': theme,
     'accent': accent,
     'darkStyle': darkStyle,
+    'language': language,
   };
 }
 

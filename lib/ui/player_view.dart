@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
 
+import '../l10n/tr.dart';
+
 /// Vídeo com um conjunto só de controles (os do próprio player):
 /// voltar/avançar 15 s, play/pause, volume, tempo e tela cheia.
 ///
@@ -84,22 +86,22 @@ class PlayerView extends StatelessWidget {
         MaterialDesktopVideoControlsThemeData(
           bottomButtonBar: <Widget>[
             const MaterialDesktopPlayOrPauseButton(),
-            _skipButton('Voltar 15 s', -15),
-            _skipButton('Avançar 15 s', 15),
+            _skipButton(tr.back15, -15),
+            _skipButton(tr.forward15, 15),
             _VolumeBar(player: _player),
             const MaterialDesktopPositionIndicator(),
             const Spacer(),
             // Trocar de episódio fica separado dos pulos de 15 s.
             if (episodeMode) ...<Widget>[
               IconButton(
-                tooltip: 'Episódio anterior',
+                tooltip: tr.previousEpisode,
                 color: Colors.white,
                 disabledColor: Colors.white38,
                 onPressed: onPrevious,
                 icon: const Icon(Icons.skip_previous),
               ),
               IconButton(
-                tooltip: 'Próximo episódio',
+                tooltip: tr.nextEpisode,
                 color: Colors.white,
                 disabledColor: Colors.white38,
                 onPressed: onNext,
@@ -141,7 +143,7 @@ class _VolumeBarState extends State<_VolumeBar> {
           mainAxisSize: MainAxisSize.min,
           children: <Widget>[
             IconButton(
-              tooltip: v == 0 ? 'Ligar o som' : 'Tirar o som',
+              tooltip: v == 0 ? tr.unmute : tr.mute,
               color: Colors.white,
               icon: Icon(
                 v == 0

@@ -8,6 +8,7 @@ import 'package:xml/xml_events.dart';
 
 import '../domain/section.dart';
 import 'download.dart';
+import '../l10n/tr.dart';
 
 final RegExp _hdrAttr = RegExp(r'([\w-]+)="([^"]*)"');
 final RegExp _nameBrackets = RegExp(r'[\[({][^\])}]*[\])}]');
@@ -92,8 +93,8 @@ bool epgIsFresh(String dbPath, {Duration maxAge = const Duration(hours: 12)}) {
 
 String _explain(Exception e) {
   if (e is DownloadException) return e.message;
-  if (e is FileSystemException) return 'arquivo do guia não encontrado';
-  return 'formato do guia não reconhecido';
+  if (e is FileSystemException) return tr.errGuideFileNotFound;
+  return tr.errGuideFormat;
 }
 
 /// Baixa (ou lê) o XMLTV de cada fonte e guarda só a janela de -3 h a +48 h.
@@ -187,7 +188,7 @@ Future<int> _importLocal(
     ins.close();
     insChan.close();
     if (ok == 0) {
-      throw DownloadException(lastError ?? 'nenhuma fonte de guia disponível');
+      throw DownloadException(lastError ?? tr.errNoGuideSource);
     }
     db.execute('CREATE INDEX idx_prog ON prog(channel, start)');
     db.execute('CREATE INDEX idx_chan ON chan(nkey)');

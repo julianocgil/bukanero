@@ -5,6 +5,7 @@ import '../data/series_info.dart';
 import '../domain/channel.dart';
 import '../domain/series.dart';
 import 'cover_image.dart';
+import '../l10n/tr.dart';
 
 String _two(int n) => n.toString().padLeft(2, '0');
 
@@ -20,12 +21,14 @@ String episodeLabel(Episode e) {
     r'[Ss]\d{1,3}\s*[._-]?\s*[Ee]\d{1,4}(?!\d)[\s._:–-]*(.*)$',
   ).firstMatch(e.name);
   final String rest = (m?.group(1) ?? '').trim();
-  return rest.isEmpty ? 'Episódio ${e.episode}' : rest;
+  return rest.isEmpty ? tr.episodeN(e.episode) : rest;
 }
 
 String _duration(int secs) {
   final int min = (secs / 60).round();
-  return min >= 60 ? '${min ~/ 60} h ${_two(min % 60)}' : '$min min';
+  return min >= 60
+      ? tr.durationHours(min ~/ 60, _two(min % 60))
+      : tr.durationMinutes(min);
 }
 
 /// Série no espaço da lista: capa, sinopse, temporadas e os episódios em
@@ -185,7 +188,7 @@ class _SeriesPanelState extends State<SeriesPanel> {
                 FilledButton.tonalIcon(
                   onPressed: widget.onBack,
                   icon: const Icon(Icons.arrow_back),
-                  label: const Text('Voltar'),
+                  label: Text(tr.back),
                 ),
                 const SizedBox(height: 4),
                 _header(t, plot),
@@ -199,7 +202,7 @@ class _SeriesPanelState extends State<SeriesPanel> {
                         Padding(
                           padding: const EdgeInsets.only(right: 8),
                           child: ChoiceChip(
-                            label: Text(s == 0 ? 'Especiais' : 'Temporada $s'),
+                            label: Text(s == 0 ? tr.specials : tr.seasonN(s)),
                             selected: s == _season,
                             onSelected: (bool _) {
                               setState(() {
@@ -259,8 +262,7 @@ class _SeriesPanelState extends State<SeriesPanel> {
                 ],
               ),
               Text(
-                '${_seasons.length} temporada(s) · '
-                '${widget.episodes.length} episódio(s)',
+                tr.seasonsEpisodes(_seasons.length, widget.episodes.length),
                 style: t.textTheme.bodySmall,
               ),
               if (plot != null) ...<Widget>[
@@ -302,7 +304,7 @@ class _SeriesPanelState extends State<SeriesPanel> {
               child: Row(
                 children: <Widget>[
                   IconButton(
-                    tooltip: 'Episódios anteriores',
+                    tooltip: tr.previousEpisodes,
                     icon: const Icon(Icons.chevron_left),
                     onPressed: _pageNow > 0 ? () => _turn(-1) : null,
                   ),
@@ -344,7 +346,7 @@ class _SeriesPanelState extends State<SeriesPanel> {
                     ),
                   ),
                   IconButton(
-                    tooltip: 'Próximos episódios',
+                    tooltip: tr.nextEpisodes,
                     icon: const Icon(Icons.chevron_right),
                     onPressed: _pageNow < _pageCount - 1
                         ? () => _turn(1)
@@ -357,7 +359,7 @@ class _SeriesPanelState extends State<SeriesPanel> {
               height: 28,
               child: Center(
                 child: Text(
-                  _pageCount > 1 ? 'Página ${_pageNow + 1} de $_pageCount' : '',
+                  _pageCount > 1 ? tr.pageOf(_pageNow + 1, _pageCount) : '',
                   style: t.textTheme.bodySmall,
                 ),
               ),
@@ -433,7 +435,10 @@ class _SeriesPanelState extends State<SeriesPanel> {
                       Positioned(
                         top: 6,
                         right: 6,
-                        child: badge('Último', color: t.colorScheme.primary),
+                        child: badge(
+                          tr.lastWatched,
+                          color: t.colorScheme.primary,
+                        ),
                       ),
                   ],
                 ),

@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 
 import '../domain/profile.dart';
+import '../l10n/tr.dart';
 
 /// Pede nome e playlist. Devolve o perfil, ou null se cancelado.
 Future<Profile?> showProfileDialog(BuildContext context, {Profile? initial}) {
@@ -35,13 +36,13 @@ class _ProfileDialogState extends State<_ProfileDialog> {
   late int _refreshHours =
       widget.initial?.refreshHours ?? Profile.defaultRefreshHours;
 
-  static const Map<int, String> _refreshOptions = <int, String>{
-    6: 'A cada 6 horas',
-    12: 'A cada 12 horas',
-    24: 'A cada 24 horas (padrão)',
-    48: 'A cada 2 dias',
-    168: 'Uma vez por semana',
-    0: 'Nunca (só quando eu pedir)',
+  static Map<int, String> get _refreshOptions => <int, String>{
+    6: tr.refresh6h,
+    12: tr.refresh12h,
+    24: tr.refresh24hDefault,
+    48: tr.refresh2d,
+    168: tr.refreshWeekly,
+    0: tr.refreshNever,
   };
   String? _error;
 
@@ -61,17 +62,15 @@ class _ProfileDialogState extends State<_ProfileDialog> {
     final String url = _url.text.trim();
     final String epg = _epg.text.trim();
     if (name.isEmpty || url.isEmpty) {
-      setState(() => _error = 'Preencha o nome e a playlist.');
+      setState(() => _error = tr.fillNameAndPlaylist);
       return;
     }
     if (!_isRemote(url) && !File(url).existsSync()) {
-      setState(
-        () => _error = 'Use uma URL http(s) ou o caminho de um arquivo.',
-      );
+      setState(() => _error = tr.playlistUrlHint);
       return;
     }
     if (epg.isNotEmpty && !_isRemote(epg) && !File(epg).existsSync()) {
-      setState(() => _error = 'Guia: use uma URL http(s) ou um arquivo XMLTV.');
+      setState(() => _error = tr.guideUrlHint);
       return;
     }
     Navigator.pop(
@@ -92,7 +91,7 @@ class _ProfileDialogState extends State<_ProfileDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: Text(widget.initial == null ? 'Novo perfil' : 'Editar perfil'),
+      title: Text(widget.initial == null ? tr.newProfile : tr.editProfile),
       content: SizedBox(
         width: 480,
         child: Column(
@@ -100,30 +99,24 @@ class _ProfileDialogState extends State<_ProfileDialog> {
           children: <Widget>[
             TextField(
               controller: _name,
-              decoration: const InputDecoration(labelText: 'Nome do usuário'),
+              decoration: InputDecoration(labelText: tr.userName),
             ),
             const SizedBox(height: 12),
             TextField(
               controller: _url,
-              decoration: const InputDecoration(
-                labelText: 'Playlist M3U (URL ou caminho do arquivo)',
-              ),
+              decoration: InputDecoration(labelText: tr.playlistField),
             ),
             const SizedBox(height: 12),
             TextField(
               controller: _epg,
-              decoration: const InputDecoration(
-                labelText: 'Guia XMLTV (opcional; vazio = detectar sozinho)',
-              ),
+              decoration: InputDecoration(labelText: tr.guideField),
             ),
             const SizedBox(height: 12),
             DropdownButtonFormField<int>(
               initialValue: _refreshOptions.containsKey(_refreshHours)
                   ? _refreshHours
                   : Profile.defaultRefreshHours,
-              decoration: const InputDecoration(
-                labelText: 'Atualizar a lista sozinho',
-              ),
+              decoration: InputDecoration(labelText: tr.autoRefreshList),
               items: <DropdownMenuItem<int>>[
                 for (final MapEntry<int, String> e in _refreshOptions.entries)
                   DropdownMenuItem<int>(value: e.key, child: Text(e.value)),
@@ -137,12 +130,8 @@ class _ProfileDialogState extends State<_ProfileDialog> {
               controlAffinity: ListTileControlAffinity.leading,
               value: _insecure,
               onChanged: (bool? v) => setState(() => _insecure = v ?? false),
-              title: const Text(
-                'Aceitar o certificado inválido deste servidor',
-              ),
-              subtitle: const Text(
-                'Só para listas em que você confia. Desmarcado é mais seguro.',
-              ),
+              title: Text(tr.acceptInvalidCert),
+              subtitle: Text(tr.acceptInvalidCertHint),
             ),
             if (_error != null)
               Padding(
@@ -158,9 +147,9 @@ class _ProfileDialogState extends State<_ProfileDialog> {
       actions: <Widget>[
         TextButton(
           onPressed: () => Navigator.pop(context),
-          child: const Text('Cancelar'),
+          child: Text(tr.cancel),
         ),
-        FilledButton(onPressed: _save, child: const Text('Salvar')),
+        FilledButton(onPressed: _save, child: Text(tr.save)),
       ],
     );
   }

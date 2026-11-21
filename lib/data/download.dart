@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'dart:io';
 
+import '../l10n/tr.dart';
+
 /// Falha de download com mensagem pronta para o usuário (nunca contém a URL).
 class DownloadException implements Exception {
   const DownloadException(this.message);
@@ -59,27 +61,23 @@ const List<String> _userAgents = <String>[
 
 String _tlsMessage(TlsException e) {
   final String t = e.toString().toLowerCase();
-  const String hint =
-      ' Se você confia neste servidor, marque "Aceitar o certificado '
-      'inválido" em Editar perfil.';
+  final String hint = ' ${tr.errCertHint}';
   if (t.contains('self signed') || t.contains('self-signed')) {
-    return 'o servidor usa um certificado autoassinado.$hint';
+    return '${tr.errSelfSigned}$hint';
   }
   if (t.contains('expired')) {
-    return 'o certificado do servidor está vencido (ou a data do PC está '
-        'errada).$hint';
+    return '${tr.errCertExpired}$hint';
   }
   if (t.contains('hostname') || t.contains('host name')) {
-    return 'o certificado do servidor é de outro domínio.$hint';
+    return '${tr.errCertHost}$hint';
   }
   if (t.contains('issuer') || t.contains('unknown ca')) {
-    return 'o certificado do servidor vem de uma autoridade desconhecida.$hint';
+    return '${tr.errCertUnknownCa}$hint';
   }
   if (t.contains('wrong_version_number') || t.contains('wrong version')) {
-    return 'o servidor não fala TLS nesta porta; tente http:// no lugar de '
-        'https://.';
+    return tr.errNoTls;
   }
-  return 'falha de TLS/certificado ao conectar';
+  return tr.errTls;
 }
 
 /// Baixa [url] (http/https) para [dest], em streaming.
@@ -101,7 +99,7 @@ Future<void> downloadFile(
   if (uri == null ||
       !(uri.scheme == 'http' || uri.scheme == 'https') ||
       uri.host.isEmpty) {
-    throw const DownloadException('URL inválida (use http:// ou https://)');
+    throw DownloadException(tr.errInvalidUrl);
   }
   int? lastStatus;
   for (final String ua in _userAgents) {
@@ -111,30 +109,24 @@ Future<void> downloadFile(
     } on _Rejected catch (e) {
       lastStatus = e.status;
     } on TimeoutException {
-      throw const DownloadException('o servidor parou de responder');
+      throw DownloadException(tr.errNoResponse);
     } on TlsException catch (e) {
       throw DownloadException(_tlsMessage(e));
     } on SocketException catch (e) {
       if (e.message.contains('Failed host lookup')) {
-        throw const DownloadException(
-          'não foi possível resolver o endereço do servidor (DNS). '
-          'A operadora pode estar bloqueando, ou o endereço mudou.',
-        );
+        throw DownloadException(tr.errDns);
       }
       throw DownloadException(
-        'falha de conexão (${e.osError?.message ?? 'rede'})',
+        tr.errConnection(e.osError?.message ?? tr.errNetwork),
       );
     } on HttpException catch (e) {
       if (e.message.toLowerCase().contains('connection closed')) {
-        throw const DownloadException('o download chegou incompleto');
+        throw DownloadException(tr.errIncomplete);
       }
-      throw DownloadException('resposta HTTP inválida: ${e.message}');
+      throw DownloadException(tr.errBadHttp(e.message));
     }
   }
-  throw DownloadException(
-    'o servidor recusou o acesso (HTTP ${lastStatus ?? '?'}). '
-    'Confira usuário e senha ou se a lista expirou.',
-  );
+  throw DownloadException(tr.errForbidden('${lastStatus ?? '?'}'));
 }
 
 Future<void> _fetchOnce(
@@ -162,7 +154,7 @@ Future<void> _fetchOnce(
     if (code == 200) {
       await _receive(res, tmp, onProgress, limits, gate);
       if (tmp.lengthSync() == 0) {
-        throw const DownloadException('o servidor devolveu uma resposta vazia');
+        throw DownloadException(tr.errEmpty);
       }
       if (dest.existsSync()) dest.deleteSync();
       tmp.renameSync(dest.path);
@@ -172,7 +164,7 @@ Future<void> _fetchOnce(
     if (<int>{401, 403, 406, 429, 444, 456}.contains(code)) {
       throw _Rejected(code);
     }
-    throw DownloadException('o servidor respondeu HTTP $code');
+    throw DownloadException(tr.errHttp(code));
   } finally {
     client.close(force: true);
     if (tmp.existsSync()) tmp.deleteSync();
@@ -208,23 +200,19 @@ Future<void> _receive(
       final int now = clock.elapsedMilliseconds;
       if (now - windowStart >= limits.slowWindow.inMilliseconds) {
         if (windowBytes < limits.slowMinBytes) {
-          throw const DownloadException(
-            'o servidor está mandando os dados devagar demais',
-          );
+          throw DownloadException(tr.errTooSlow);
         }
         windowStart = now;
         windowBytes = 0;
       }
       if (clock.elapsed > limits.total) {
-        throw DownloadException(
-          'o download passou de ${limits.total.inMinutes} min e foi cancelado',
-        );
+        throw DownloadException(tr.errTooLong(limits.total.inMinutes));
       }
     }
   } finally {
     await sink.close();
   }
   if (total != null && received < total) {
-    throw const DownloadException('o download chegou incompleto');
+    throw DownloadException(tr.errIncomplete);
   }
 }

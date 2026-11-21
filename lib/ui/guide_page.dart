@@ -8,6 +8,7 @@ import '../domain/channel.dart';
 import '../domain/section.dart';
 import 'category_picker.dart';
 import 'cover_image.dart';
+import '../l10n/tr.dart';
 
 const double _rowH = 60;
 const double _chanW = 220;
@@ -245,12 +246,12 @@ class _GuidePageState extends State<_GuidePage> {
         actions: <Widget>[
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Fechar'),
+            child: Text(tr.close),
           ),
           FilledButton.icon(
             onPressed: () => Navigator.pop(ctx, true),
             icon: const Icon(Icons.play_arrow),
-            label: Text(live ? 'Assistir agora' : 'Abrir o canal'),
+            label: Text(live ? tr.watchNow : tr.openChannel),
           ),
         ],
       ),
@@ -264,15 +265,15 @@ class _GuidePageState extends State<_GuidePage> {
     return Scaffold(
       appBar: AppBar(
         leading: const CloseButton(),
-        title: const Text('Guia de programação'),
+        title: Text(tr.programGuide),
         actions: <Widget>[
           SizedBox(
             width: 260,
             child: TextField(
               controller: _search,
-              decoration: const InputDecoration(
+              decoration: InputDecoration(
                 prefixIcon: Icon(Icons.search),
-                hintText: 'Canal ou programa',
+                hintText: tr.channelOrProgram,
                 isDense: true,
               ),
               onChanged: (String v) => setState(() => _query = v),
@@ -281,16 +282,14 @@ class _GuidePageState extends State<_GuidePage> {
           const SizedBox(width: 12),
           DropdownButton<String?>(
             value: _group,
-            hint: const Text('Todas as categorias'),
+            hint: Text(tr.allCategories),
             onChanged: (String? g) => setState(() => _group = g),
             items: <DropdownMenuItem<String?>>[
-              const DropdownMenuItem<String?>(
-                child: Text('Todas as categorias'),
-              ),
+              DropdownMenuItem<String?>(child: Text(tr.allCategories)),
               if (widget.favoriteUrls != null)
-                const DropdownMenuItem<String?>(
+                DropdownMenuItem<String?>(
                   value: favoritesGroup,
-                  child: Text('Favoritos'),
+                  child: Text(tr.favorites),
                 ),
               for (final String g in _groups)
                 DropdownMenuItem<String?>(value: g, child: Text(g)),
@@ -298,13 +297,13 @@ class _GuidePageState extends State<_GuidePage> {
           ),
           const SizedBox(width: 12),
           IconButton(
-            tooltip: 'Uma hora antes',
+            tooltip: tr.oneHourBefore,
             icon: const Icon(Icons.chevron_left),
             onPressed: () => _scrollBy(-60),
           ),
-          TextButton(onPressed: _scrollToNow, child: const Text('Agora')),
+          TextButton(onPressed: _scrollToNow, child: Text(tr.now)),
           IconButton(
-            tooltip: 'Uma hora depois',
+            tooltip: tr.oneHourAfter,
             icon: const Icon(Icons.chevron_right),
             onPressed: () => _scrollBy(60),
           ),
@@ -312,9 +311,7 @@ class _GuidePageState extends State<_GuidePage> {
         ],
       ),
       body: _all.isEmpty
-          ? const Center(
-              child: Text('Nenhum canal desta lista tem programação no guia.'),
-            )
+          ? Center(child: Text(tr.guideNoChannels))
           : Row(
               children: <Widget>[
                 SizedBox(width: _chanW, child: _channelColumn(rows)),
@@ -332,7 +329,10 @@ class _GuidePageState extends State<_GuidePage> {
         SizedBox(
           height: _headerH,
           child: Center(
-            child: Text('${rows.length} canais', style: t.textTheme.bodySmall),
+            child: Text(
+              tr.channelsCount(rows.length),
+              style: t.textTheme.bodySmall,
+            ),
           ),
         ),
         const Divider(height: 1),

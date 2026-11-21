@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../data/groups_db.dart';
 import '../domain/section.dart';
+import '../l10n/tr.dart';
 
 /// Lista os grupos juntados só por nome e imagem (os que podem errar),
 /// para conferir rápido numa lista nova e separar o que estiver estranho.
@@ -48,7 +49,7 @@ class _ReviewDialogState extends State<_ReviewDialog> {
           ];
     final Size screen = MediaQuery.sizeOf(context);
     return AlertDialog(
-      title: const Text('Revisar agrupamentos'),
+      title: Text(tr.reviewGroups),
       content: SizedBox(
         width: 640,
         height: screen.height * 0.6,
@@ -56,16 +57,14 @@ class _ReviewDialogState extends State<_ReviewDialog> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[
             Text(
-              '${widget.groups.length} grupos foram juntados só por nome e '
-              'imagem. Os juntados só pelo nome vêm primeiro. Separe o que '
-              'não for a mesma coisa.',
+              tr.reviewIntro(widget.groups.length),
               style: t.textTheme.bodySmall,
             ),
             const SizedBox(height: 8),
             TextField(
-              decoration: const InputDecoration(
+              decoration: InputDecoration(
                 prefixIcon: Icon(Icons.search),
-                hintText: 'Procurar grupo',
+                hintText: tr.searchGroup,
                 isDense: true,
               ),
               onChanged: (String v) => setState(() => _query = v),
@@ -73,7 +72,7 @@ class _ReviewDialogState extends State<_ReviewDialog> {
             const SizedBox(height: 8),
             Expanded(
               child: list.isEmpty
-                  ? const Center(child: Text('Nada para revisar aqui.'))
+                  ? Center(child: Text(tr.nothingToReview))
                   : ListView.separated(
                       itemCount: list.length,
                       separatorBuilder: (BuildContext context, int i) =>
@@ -95,7 +94,7 @@ class _ReviewDialogState extends State<_ReviewDialog> {
                           subtitle: Text(
                             '${shown.join(' · ')}'
                             '${g.labels.length > 6 ? ' · +${g.labels.length - 6}' : ''}'
-                            '\n${g.reasons}',
+                            '\n${reasonsLabel(g.reasons)}',
                             maxLines: 2,
                             overflow: TextOverflow.ellipsis,
                           ),
@@ -103,7 +102,7 @@ class _ReviewDialogState extends State<_ReviewDialog> {
                             icon: Icon(
                               apart ? Icons.merge_type : Icons.call_split,
                             ),
-                            label: Text(apart ? 'Reagrupar' : 'Separar'),
+                            label: Text(apart ? tr.regroup : tr.separate),
                             onPressed: () => setState(
                               () => widget.onSet(g.key, separated: !apart),
                             ),
@@ -118,7 +117,7 @@ class _ReviewDialogState extends State<_ReviewDialog> {
       actions: <Widget>[
         FilledButton(
           onPressed: () => Navigator.pop(context),
-          child: const Text('Fechar'),
+          child: Text(tr.close),
         ),
       ],
     );

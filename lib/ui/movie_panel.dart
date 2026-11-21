@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../data/series_info.dart';
 import '../domain/channel.dart';
 import 'cover_image.dart';
+import '../l10n/tr.dart';
 
 /// Detalhes do filme no espaço da lista (o vídeo continua ao lado): fundo,
 /// pôster, nota, sinopse, elenco, versões e os botões Assistir e Favoritar.
@@ -55,8 +56,8 @@ class _MoviePanelState extends State<MoviePanel> {
   static String _duration(int secs) {
     final int min = (secs / 60).round();
     return min >= 60
-        ? '${min ~/ 60} h ${(min % 60).toString().padLeft(2, '0')}'
-        : '$min min';
+        ? tr.durationHours(min ~/ 60, (min % 60).toString().padLeft(2, '0'))
+        : tr.durationMinutes(min);
   }
 
   static String _rating(double r) =>
@@ -104,7 +105,7 @@ class _MoviePanelState extends State<MoviePanel> {
               child: FilledButton.tonalIcon(
                 onPressed: widget.onBack,
                 icon: const Icon(Icons.arrow_back),
-                label: const Text('Voltar'),
+                label: Text(tr.back),
               ),
             ),
             const SizedBox(height: 4),
@@ -166,7 +167,7 @@ class _MoviePanelState extends State<MoviePanel> {
                         children: <Widget>[
                           FilledButton.icon(
                             icon: const Icon(Icons.play_arrow),
-                            label: const Text('Assistir'),
+                            label: Text(tr.watch),
                             onPressed: () => widget.onPlay(
                               identical(_pick, widget.preferred) ? null : _pick,
                             ),
@@ -179,7 +180,7 @@ class _MoviePanelState extends State<MoviePanel> {
                               color: widget.favorite ? Colors.redAccent : null,
                             ),
                             label: Text(
-                              widget.favorite ? 'Favorito' : 'Favoritar',
+                              widget.favorite ? tr.favorited : tr.addFavorite,
                             ),
                             onPressed: widget.onToggleFavorite,
                           ),
@@ -192,7 +193,7 @@ class _MoviePanelState extends State<MoviePanel> {
             ),
             if (m.isGroup) ...<Widget>[
               const SizedBox(height: 16),
-              Text('Versões', style: t.textTheme.titleSmall),
+              Text(tr.versions, style: t.textTheme.titleSmall),
               const SizedBox(height: 6),
               Wrap(
                 spacing: 8,
@@ -200,7 +201,7 @@ class _MoviePanelState extends State<MoviePanel> {
                 children: <Widget>[
                   for (final ChannelVersion v in m.versions)
                     ChoiceChip(
-                      label: Text(v.label),
+                      label: Text(versionName(v.label)),
                       selected: v.channel.url == _pick.url,
                       onSelected: (_) => setState(() => _pick = v.channel),
                     ),
@@ -214,9 +215,9 @@ class _MoviePanelState extends State<MoviePanel> {
             if (x?.director != null || x?.cast != null) ...<Widget>[
               const SizedBox(height: 12),
               if (x?.director != null)
-                Text('Direção: ${x!.director}', style: t.textTheme.bodySmall),
+                Text(tr.directedBy(x!.director!), style: t.textTheme.bodySmall),
               if (x?.cast != null)
-                Text('Elenco: ${x!.cast}', style: t.textTheme.bodySmall),
+                Text(tr.castList(x!.cast!), style: t.textTheme.bodySmall),
             ],
             if (_loading)
               const Padding(

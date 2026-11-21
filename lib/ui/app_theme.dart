@@ -1,14 +1,24 @@
 import 'package:flutter/material.dart';
 
 import '../data/app_settings.dart';
+import '../l10n/tr.dart';
 
 /// Cores de destaque disponíveis (o dourado é o do ícone).
-const Map<String, (String, Color)> accentColors = <String, (String, Color)>{
-  'gold': ('Dourado', Color(0xFFD9AC4F)),
-  'blue': ('Azul', Color(0xFF5B9BE6)),
-  'green': ('Verde', Color(0xFF5FBF8F)),
-  'red': ('Vermelho', Color(0xFFE0675B)),
-  'purple': ('Roxo', Color(0xFFA98BE6)),
+const Map<String, Color> accentColors = <String, Color>{
+  'gold': Color(0xFFD9AC4F),
+  'blue': Color(0xFF5B9BE6),
+  'green': Color(0xFF5FBF8F),
+  'red': Color(0xFFE0675B),
+  'purple': Color(0xFFA98BE6),
+};
+
+/// Nome da cor de destaque no idioma do app.
+String accentName(String id) => switch (id) {
+  'gold' => tr.accentGold,
+  'blue' => tr.accentBlue,
+  'green' => tr.accentGreen,
+  'red' => tr.accentRed,
+  _ => tr.accentPurple,
 };
 
 /// A aparência escolhida; o app se redesenha quando ela muda.
@@ -32,7 +42,7 @@ ThemeData darkThemeOf(AppSettings s) {
 }
 
 Color accentOf(AppSettings s) =>
-    (accentColors[s.accent] ?? accentColors['gold']!).$2;
+    accentColors[s.accent] ?? accentColors['gold']!;
 
 Color _shade(Color c, double lightness) =>
     HSLColor.fromColor(c).withLightness(lightness).toColor();

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../domain/section.dart';
+import '../l10n/tr.dart';
 
 /// Troca entre Ao vivo, Filmes e Séries: uma pílula em que a seção ativa
 /// mostra ícone e nome em dourado; as outras, só o ícone.
@@ -14,11 +15,11 @@ class SectionSwitch extends StatelessWidget {
   final Section selected;
   final ValueChanged<Section> onChanged;
 
-  static const Map<Section, (IconData, String)> _items =
+  static Map<Section, (IconData, String)> get _items =>
       <Section, (IconData, String)>{
-        Section.live: (Icons.live_tv_rounded, 'Ao vivo'),
-        Section.movies: (Icons.movie_outlined, 'Filmes'),
-        Section.series: (Icons.video_library_outlined, 'Séries'),
+        Section.live: (Icons.live_tv_rounded, tr.liveShort),
+        Section.movies: (Icons.movie_outlined, tr.movies),
+        Section.series: (Icons.video_library_outlined, tr.series),
       };
 
   @override
