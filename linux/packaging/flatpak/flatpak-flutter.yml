@@ -2,10 +2,10 @@
 # com todas as dependências para a compilação sem internet do Flathub).
 id: io.github.julianocgil.Bukanero
 runtime: org.freedesktop.Platform
-runtime-version: '25.08'
+runtime-version: '26.08'
 sdk: org.freedesktop.Sdk
 sdk-extensions:
-  - org.freedesktop.Sdk.Extension.llvm20
+  - org.freedesktop.Sdk.Extension.llvm22
 command: bukanero
 finish-args:
   - --share=ipc
@@ -71,14 +71,14 @@ modules:
     sources:
       - type: git
         url: https://github.com/mpv-player/mpv.git
-        tag: v0.40.0
-        commit: e48ac7ce08462f5e33af6ef9deeac6fa87eef01e
+        tag: v0.42.0
+        commit: b0841e8c4d156b8403dc1876c4cbd9011eb583f3
 
   - name: bukanero
     buildsystem: simple
     build-options:
-      append-path: /usr/lib/sdk/llvm20/bin:/run/build/bukanero/flutter/bin
-      prepend-ld-library-path: /usr/lib/sdk/llvm20/lib
+      append-path: /usr/lib/sdk/llvm22/bin:/run/build/bukanero/flutter/bin
+      prepend-ld-library-path: /usr/lib/sdk/llvm22/lib
       env:
         PUB_CACHE: /run/build/bukanero/.pub-cache
     build-commands:
