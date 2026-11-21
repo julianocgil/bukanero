@@ -1,0 +1,106 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>io.github.julianocgil.Bukanero</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>GPL-3.0-or-later</project_license>
+
+  <name>Bukanero</name>
+  <summary>Privacy-first IPTV player</summary>
+  <summary xml:lang="pt_BR">Player de IPTV com privacidade</summary>
+  <summary xml:lang="es">Reproductor IPTV con privacidad</summary>
+  <summary xml:lang="fr">Lecteur IPTV respectueux de la vie privée</summary>
+  <summary xml:lang="de">IPTV-Player mit Fokus auf Privatsphäre</summary>
+  <summary xml:lang="it">Lettore IPTV rispettoso della privacy</summary>
+
+  <developer id="io.github.julianocgil">
+    <name>Juliano Gil</name>
+  </developer>
+
+  <description>
+    <p>
+      Bukanero plays the live channels, movies and series of the M3U playlists
+      you add, with a TV guide and a clean, fast interface.
+    </p>
+    <p>
+      Bukanero does not include, sell or recommend any content: it only plays
+      playlists and guides that you provide. It has no telemetry and no
+      accounts, and only talks to the server of your own playlist.
+    </p>
+    <p>Features:</p>
+    <ul>
+      <li>Live channels, movies and series from M3U playlists, including Xtream-style servers</li>
+      <li>TV guide (XMLTV) with what is on now and a full timeline</li>
+      <li>Smart grouping: the HD, FHD, 4K, dubbed and subtitled versions of the same channel or movie become a single card</li>
+      <li>A frozen live channel reconnects by itself and, if needed, switches to another version</li>
+      <li>Favorites, hidden items, continue watching, ratings and synopses when the server provides them</li>
+      <li>Seasons and episodes, with a next-episode countdown</li>
+      <li>Several profiles, dark, black and light themes, and accent colors</li>
+      <li>Hardware-accelerated video powered by mpv</li>
+      <li>Available in English, Portuguese, Spanish, French, German and Italian</li>
+    </ul>
+  </description>
+
+  <launchable type="desktop-id">io.github.julianocgil.Bukanero.desktop</launchable>
+
+  <url type="homepage">https://github.com/julianocgil/bukanero</url>
+  <url type="bugtracker">https://github.com/julianocgil/bukanero/issues</url>
+  <url type="vcs-browser">https://github.com/julianocgil/bukanero</url>
+
+  <branding>
+    <color type="primary" scheme_preference="light">#d9ac4f</color>
+    <color type="primary" scheme_preference="dark">#0b1328</color>
+  </branding>
+
+  <screenshots>
+    <screenshot type="default">
+      <caption>Live channels with the TV guide</caption>
+      <image>https://raw.githubusercontent.com/julianocgil/bukanero/main/linux/packaging/screenshots/01-live.png</image>
+    </screenshot>
+    <screenshot>
+      <caption>Movie details, with every version in one card</caption>
+      <image>https://raw.githubusercontent.com/julianocgil/bukanero/main/linux/packaging/screenshots/02-movie.png</image>
+    </screenshot>
+    <screenshot>
+      <caption>TV guide timeline</caption>
+      <image>https://raw.githubusercontent.com/julianocgil/bukanero/main/linux/packaging/screenshots/03-guide.png</image>
+    </screenshot>
+    <screenshot>
+      <caption>Series with seasons and episodes</caption>
+      <image>https://raw.githubusercontent.com/julianocgil/bukanero/main/linux/packaging/screenshots/04-series.png</image>
+    </screenshot>
+    <screenshot>
+      <caption>Channels in the wide layout</caption>
+      <image>https://raw.githubusercontent.com/julianocgil/bukanero/main/linux/packaging/screenshots/05-channels.png</image>
+    </screenshot>
+    <screenshot>
+      <caption>Themes, accent colors and languages</caption>
+      <image>https://raw.githubusercontent.com/julianocgil/bukanero/main/linux/packaging/screenshots/06-settings.png</image>
+    </screenshot>
+  </screenshots>
+
+  <content_rating type="oars-1.1"/>
+
+  <requires>
+    <display_length compare="ge">768</display_length>
+  </requires>
+  <supports>
+    <control>pointing</control>
+    <control>keyboard</control>
+  </supports>
+
+  <releases>
+    <release version="0.7.0" date="2026-11-22">
+      <description>
+        <p>First release on Flathub.</p>
+        <ul>
+          <li>Interface in six languages</li>
+          <li>Frozen live channels reconnect or switch to another version</li>
+          <li>Lists load in the background, so switching sections never freezes</li>
+          <li>The TV guide opens on the channel you are watching, with the same filter as the list</li>
+        </ul>
+      </description>
+    </release>
+    <release version="0.6.0" date="2026-11-15"/>
+    <release version="0.5.0" date="2026-11-11"/>
+  </releases>
+</component>

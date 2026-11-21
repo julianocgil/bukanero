@@ -1,0 +1,110 @@
+# Manifesto de entrada do flatpak-flutter (gera o io.github.julianocgil.Bukanero.yml
+# com todas as dependências para a compilação sem internet do Flathub).
+id: io.github.julianocgil.Bukanero
+runtime: org.freedesktop.Platform
+runtime-version: '25.08'
+sdk: org.freedesktop.Sdk
+sdk-extensions:
+  - org.freedesktop.Sdk.Extension.llvm20
+command: bukanero
+finish-args:
+  - --share=ipc
+  - --share=network
+  - --socket=wayland
+  - --socket=fallback-x11
+  - --socket=pulseaudio
+  - --device=dri
+  # Listas e guias guardados em arquivo (o normal é uma URL).
+  - --filesystem=xdg-download:ro
+  - --filesystem=xdg-documents:ro
+cleanup:
+  - /include
+  - /lib/pkgconfig
+  - /share/man
+  - '*.a'
+  - '*.la'
+modules:
+  # Legendas do mpv.
+  - name: libass
+    config-opts:
+      - --disable-static
+      - --enable-fontconfig
+    sources:
+      - type: git
+        url: https://github.com/libass/libass.git
+        tag: 0.17.3
+        commit: e46aedea0a0d17da4c4ef49d84b94a7994664ab5
+
+  # Renderização de vídeo do mpv (GPU).
+  - name: libplacebo
+    buildsystem: meson
+    config-opts:
+      - -Dvulkan=enabled
+      - -Dshaderc=enabled
+      - -Ddemos=false
+      - -Dtests=false
+    sources:
+      - type: git
+        url: https://code.videolan.org/videolan/libplacebo.git
+        tag: v7.387.0
+        commit: 275f7dea27924cdd34ab2e6c20e448b6bc4fab65
+
+  # Só a biblioteca do mpv (libmpv), sem o player de linha de comando.
+  - name: mpv
+    buildsystem: meson
+    config-opts:
+      - -Dlibmpv=true
+      - -Dcplayer=false
+      - -Dlua=disabled
+      - -Djavascript=disabled
+      - -Duchardet=disabled
+      - -Dlibbluray=disabled
+      - -Ddvdnav=disabled
+      - -Dcdda=disabled
+      - -Drubberband=disabled
+      - -Dvapoursynth=disabled
+      - -Dzimg=disabled
+      - -Dmanpage-build=disabled
+      - -Dhtml-build=disabled
+      - -Dpdf-build=disabled
+      - -Dwerror=false
+    sources:
+      - type: git
+        url: https://github.com/mpv-player/mpv.git
+        tag: v0.40.0
+        commit: e48ac7ce08462f5e33af6ef9deeac6fa87eef01e
+
+  - name: bukanero
+    buildsystem: simple
+    build-options:
+      append-path: /usr/lib/sdk/llvm20/bin:/run/build/bukanero/flutter/bin
+      prepend-ld-library-path: /usr/lib/sdk/llvm20/lib
+      env:
+        PUB_CACHE: /run/build/bukanero/.pub-cache
+    build-commands:
+      # SQLite do próprio runtime (o pacote sqlite3 baixaria um binário pronto).
+      - cat sqlite-system.yaml >> pubspec.yaml
+      - flutter pub get --offline
+      - flutter build linux --release --no-pub
+      - mkdir -p ${FLATPAK_DEST}/lib/bukanero ${FLATPAK_DEST}/bin
+      - cp -r build/linux/*/release/bundle/* ${FLATPAK_DEST}/lib/bukanero/
+      - ln -s ${FLATPAK_DEST}/lib/bukanero/bukanero ${FLATPAK_DEST}/bin/bukanero
+      - ln -s $(find /usr/lib -name libsqlite3.so.0 | head -1) ${FLATPAK_DEST}/lib/libsqlite3.so
+      - install -Dm644 linux/packaging/${FLATPAK_ID}.desktop -t ${FLATPAK_DEST}/share/applications
+      - install -Dm644 linux/packaging/${FLATPAK_ID}.metainfo.xml -t ${FLATPAK_DEST}/share/metainfo
+      - for s in 16 24 32 48 64 128 256 512; do install -Dm644 linux/packaging/icons/$s.png ${FLATPAK_DEST}/share/icons/hicolor/${s}x${s}/apps/${FLATPAK_ID}.png; done
+    sources:
+      - type: git
+        url: https://github.com/julianocgil/bukanero.git
+        branch: main
+      - type: inline
+        dest-filename: sqlite-system.yaml
+        contents: |
+          hooks:
+            user_defines:
+              sqlite3:
+                source: system
+      - type: git
+        url: https://github.com/flutter/flutter.git
+        tag: 3.47.7
+        dest: flutter

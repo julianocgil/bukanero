@@ -72,6 +72,11 @@ set_target_properties(${BINARY_NAME}
 
 # Generated plugin build rules, which manage building the plugins and adding
 # them to the application.
+# No Flatpak a compilação não tem internet: o media_kit não pode baixar o
+# mimalloc na hora (usa o malloc do sistema).
+if(DEFINED ENV{FLATPAK_ID})
+  set(MIMALLOC_USE_STATIC_LIBS OFF CACHE BOOL "" FORCE)
+endif()
 include(flutter/generated_plugins.cmake)
 
 

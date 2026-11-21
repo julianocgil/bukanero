@@ -2,7 +2,10 @@
 
 Player IPTV pessoal para Linux desktop (Flutter + media_kit), privacy-first, sem SDKs de terceiros.
 Antes se chamava "Meu IPTV"; a pasta do projeto continua `~/meu_iptv`. App id: `io.github.julianocgil.Bukanero`.
-Meta: empacotar como Flatpak. Idioma da conversa e da UI: português do Brasil.
+Meta: publicar no Flathub (GPL-3.0). Idioma da conversa: português do Brasil.
+UI em 6 idiomas (pt, en, es, fr, de, it): textos em `lib/l10n/app_*.arb` (o modelo é o `app_pt.arb`),
+lidos pelo `tr` global de `lib/l10n/tr.dart`. Frase nova na tela entra nos 6 arquivos; nada de texto
+solto no código.
 
 ## Estrutura
 - `lib/domain/` modelos puros (Channel, Section, Profile, series, sort_mode, stream_id)
@@ -43,7 +46,12 @@ a pasta antiga `meu_iptv/` é movida para `bukanero/`.
 ## Pendências conhecidas
 - Ordem automática por resolução medida no player (hoje: marca mais frequente + tabela de qualidade)
 - EPG por nome do canal: revisar canais regionais sem guia próprio
-- Flatpak (hoje há o .deb: `linux/packaging/build_deb.sh`; Release no GitHub privado)
+- Flathub: manifesto de entrada em `linux/packaging/flatpak/flatpak-flutter.yml` (libass, libplacebo e
+  libmpv compilados; app pelo flatpak-flutter, sem internet). Gerar com o flatpak-flutter e, no
+  `generated/sources/pubspec.json`, tirar o download do libsqlite3 e o patch do sqlite3 (o app usa o
+  SQLite do runtime via `sqlite-system.yaml`). Testado localmente; falta repositório público e envio.
+  Descrição da loja: `linux/packaging/*.metainfo.xml`; capturas em `linux/packaging/screenshots/`
+  (lista de demonstração com conteúdo livre, nunca a lista do usuário).
 - PC antigo (Intel HD 4000) lento em 4K: rodar `vainfo` lá e mandar o desempenho.csv; provável falta do
   driver `i965-va-driver` (a HD 4000 não usa o intel-media-va-driver) e HEVC 4K sem decodificação na placa.
   (O .deb 0.4.0 já recomenda `i965-va-driver`.)
