@@ -51,3 +51,8 @@ app.*.map.json
 
 # Claude Code (config pessoal local)
 .claude/settings.local.json
+
+# Flatpak (compilação local)
+.flatpak-builder/
+linux/packaging/flatpak/builddir/
+linux/packaging/flatpak/repo/
